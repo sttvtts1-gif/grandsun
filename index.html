@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>그랜드썬 수익 분석 시스템 v5.9</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @font-face {
+            font-family: 'Paperlogy-8ExtraBold';
+            src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/2412-1@1.0/Paperlogy-8ExtraBold.woff2') format('woff2');
+            font-weight: 800;
+            font-style: normal;
+        }
+        
+        :root {
+            --primary: #0f172a;
+            --accent: #4f46e5;
+        }
+
+        * {
+            font-family: 'Paperlogy-8ExtraBold', sans-serif !important;
+            box-sizing: border-box;
+        }
+
+        body { 
+            background-color: #f8fafc;
+            margin: 0;
+            color: #334155;
+            font-weight: 800;
+        }
+
+        .glass-card {
+            background: #ffffff;
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05);
+            border-radius: 24px;
+            border: 1px solid #f1f5f9;
+        }
+
+        /* --- 캡처 모드 강제 스타일 --- */
+        body.capturing .no-capture { display: none !important; }
+        body.capturing .app-shell { height: auto !important; width: 1600px !important; background: #ffffff !important; }
+        body.capturing .main-container { padding: 80px !important; max-width: none !important; width: 100% !important; }
+        
+        body.capturing .settings-grid {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 40px !important;
+        }
+
+        body.capturing .glass-card { 
+            border-radius: 60px !important; 
+            padding: 80px !important; 
+            margin-bottom: 40px !important; 
+            border: 5px solid #f1f5f9 !important;
+            box-shadow: none !important;
+        }
+
+        /* 캡처 시 입력창 숨기고 텍스트 데이터 표시 */
+        body.capturing input, body.capturing .no-capture-ui { display: none !important; }
+        
+        .capture-only-data { display: none; }
+        body.capturing .capture-only-data { 
+            display: block !important; 
+            font-size: 72px !important; 
+            font-weight: 900 !important; 
+            color: #000 !important;
+            text-align: right;
+            line-height: 1.1;
+            white-space: nowrap;
+            width: 100%;
+        }
+
+        body.capturing .capture-row-container {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            margin-bottom: 35px !important;
+            width: 100% !important;
+            background: #f8fafc !important;
+            padding: 50px 60px !important;
+            border-radius: 40px !important;
+            gap: 20px !important;
+        }
+
+        body.capturing h3 { 
+            font-size: 56px !important; 
+            border-left-width: 25px !important; 
+            padding-left: 45px !important; 
+            margin-bottom: 70px !important; 
+        }
+
+        body.capturing label { font-size: 44px !important; color: #64748b !important; white-space: nowrap !important; }
+
+        /* 지표 카드 캡처 */
+        body.capturing .metric-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 25px !important;
+        }
+        body.capturing .metric-card { 
+            height: 580px !important; 
+            border-radius: 90px !important; 
+            padding: 60px 20px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            align-items: center !important;
+        }
+        body.capturing .metric-title { font-size: 38px !important; margin-bottom: 40px !important; }
+        body.capturing .metric-value { font-size: 140px !important; line-height: 0.9 !important; }
+        body.capturing .metric-unit { font-size: 50px !important; margin-top: 15px !important; }
+
+        /* 테이블 캡처 대응 */
+        body.capturing .detailed-table table { width: 100% !important; font-size: 32px !important; }
+        body.capturing .detailed-table th, body.capturing .detailed-table td { padding: 30px !important; border-bottom-width: 4px !important; }
+
+        .table-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        
+        /* 용량 박스 보정 */
+        .capacity-ui-box { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .capacity-input-native { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: transparent; border: none; text-align: center; font-size: 1.25rem; color: transparent; caret-color: var(--accent); z-index: 10; outline: none; }
+        .capacity-input-native:focus { color: var(--accent); }
+        .capacity-input-native:focus + .capacity-visual-layer { display: none; }
+
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #e2e8f0; border-radius: 4px; }
+        input[type=range]::-webkit-slider-thumb { height: 22px; width: 22px; border-radius: 50%; background: var(--accent); cursor: pointer; -webkit-appearance: none; margin-top: -7px; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+        /* 지표 카드 모바일 스크롤 간격 보정 */
+        .metric-grid-scroll {
+            display: flex;
+            overflow-x: auto;
+            gap: 2rem;
+            padding: 1rem;
+            -webkit-overflow-scrolling: touch;
+        }
+        .metric-grid-scroll::-webkit-scrollbar { display: none; }
+        .metric-grid-scroll > div {
+            flex-shrink: 0;
+            min-width: 380px;
+        }
+
+        @media (min-width: 1024px) {
+            .metric-grid-scroll {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                overflow-x: visible;
+                padding: 0;
+                gap: 1.5rem;
+            }
+            .metric-grid-scroll > div {
+                min-width: 0;
+            }
+        }
+
+        .chart-scroll-container {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .detailed-table td, .detailed-table th {
+            white-space: nowrap !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useRef } = React;
+        const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
+
+        const App = () => {
+            const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
+            const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
+            const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
+            const chartFontConfig = { fontFamily: 'Paperlogy-8ExtraBold', fontWeight: 800 };
+
+            const [capacityInput, setCapacityInput] = useState("100.000");
+            const [customPrice, setCustomPrice] = useState(220);
+            const [constCost, setConstCost] = useState(150000000);
+            const [kepcoCost, setKepcoCost] = useState(15000000);
+            
+            const [loanActive, setLoanActive] = useState(false);
+            const [loanPrincipal, setLoanPrincipal] = useState(80000000); 
+            const [loanInterest, setLoanInterest] = useState("2.00");
+            const [loanGrace, setLoanGrace] = useState(5);
+            const [loanPeriod, setLoanPeriod] = useState(10);
+
+            const [baseGenTime, setBaseGenTime] = useState(3.6);
+            const [moduleAngle, setModuleAngle] = useState(10);
+
+            const [isCapturing, setIsCapturing] = useState(false);
+            const [capturedImage, setCapturedImage] = useState(null);
+            const [showModal, setShowModal] = useState(false);
+            const [statusMsg, setStatusMsg] = useState("");
+
+            const captureRef = useRef(null);
+
+            const capacity = useMemo(() => Number(capacityInput) || 0, [capacityInput]);
+            const capParts = useMemo(() => {
+                const parts = capacityInput.split('.');
+                return { int: parts[0] || '0', dec: parts[1] !== undefined ? `.${parts[1]}` : '' };
+            }, [capacityInput]);
+
+            const totalInvestmentWon = constCost + kepcoCost;
+            const equityWon = totalInvestmentWon - (loanActive ? loanPrincipal : 0);
+
+            const yearlyData = useMemo(() => {
+                let data = [];
+                let cumulativeRevenue = 0;
+                let cumulativeProfit = 0;
+                let cumulativeCashFlow = 0;
+                const baseAnnualOpCost = ((capacity <= 100 ? 75950 : 86590) * 12) + (capacity <= 100 ? 400000 : 700000);
+                const intRateYear = (parseFloat(loanInterest) || 0) / 100;
+                const mRate = intRateYear / 12;
+                const rMonths = loanPeriod * 12;
+                const gMonths = loanGrace * 12;
+                let mInstallment = (loanActive && mRate > 0 && rMonths > 0) ? (loanPrincipal * mRate * Math.pow(1 + mRate, rMonths)) / (Math.pow(1 + mRate, rMonths) - 1) : (loanActive && rMonths > 0 ? loanPrincipal / rMonths : 0);
+                let currentLoanBalance = loanPrincipal;
+
+                for (let year = 1; year <= 30; year++) {
+                    const eff = 0.99 - ((year - 1) * 0.004);
+                    const angAdj = moduleAngle === 10 ? 0 : (moduleAngle < 10 ? -3.29 + (moduleAngle - 5) * 0.658 : (moduleAngle - 10) * 0.48);
+                    const annualGeneration = capacity * (baseGenTime * (1 + angAdj / 100)) * 365 * eff;
+                    const annualRevenue = annualGeneration * customPrice;
+                    const opCost = baseAnnualOpCost * Math.pow(1.02, year - 1);
+                    let yearlyInterest = 0;
+                    let yearlyPrincipalRepay = 0;
+                    if (loanActive && year <= (loanGrace + loanPeriod)) {
+                        for (let m = 1; m <= 12; m++) {
+                            const curM = (year - 1) * 12 + m;
+                            if (curM <= gMonths) { yearlyInterest += (currentLoanBalance * mRate); }
+                            else if (curM <= (gMonths + rMonths)) {
+                                const interestPart = currentLoanBalance * mRate;
+                                const principalPart = mInstallment - interestPart;
+                                yearlyInterest += interestPart; yearlyPrincipalRepay += principalPart;
+                                currentLoanBalance = Math.max(0, currentLoanBalance - principalPart);
+                            }
+                        }
+                    }
+                    const annualNetProfit = annualRevenue - opCost - yearlyInterest;
+                    const annualCashOut = annualRevenue - opCost - (yearlyInterest + yearlyPrincipalRepay);
+                    cumulativeRevenue += annualRevenue; cumulativeProfit += annualNetProfit; cumulativeCashFlow += annualCashOut;
+                    data.push({ 
+                        year, revenue: Math.round(annualRevenue/1000), opCost: Math.round(opCost/1000), loanInterest: Math.round(yearlyInterest/1000), principalRepay: Math.round(yearlyPrincipalRepay/1000), netCash: Math.round(annualCashOut/1000), cumRevenue: Math.round(cumulativeRevenue/1000), cumProfit: Math.round(cumulativeProfit/1000), cumCash: Math.round(cumulativeCashFlow/1000)
+                    });
+                }
+                return data;
+            }, [capacity, baseGenTime, moduleAngle, customPrice, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod]);
+
+            const paybackDetail = useMemo(() => {
+                const target = equityWon / 1000;
+                const idx = yearlyData.findIndex(d => d.cumCash >= target);
+                if (idx === -1) return { year: "-", month: "-" };
+                const prevCumCash = idx > 0 ? yearlyData[idx - 1].cumCash : 0;
+                const remaining = target - prevCumCash;
+                const curYearCash = yearlyData[idx].netCash;
+                let months = curYearCash > 0 ? Math.ceil((remaining / curYearCash) * 12) : 12;
+                let finalYear = idx; let finalMonth = months;
+                if (finalMonth >= 12) { finalYear += 1; finalMonth = 0; }
+                return { year: finalYear, month: finalMonth };
+            }, [yearlyData, equityWon]);
+
+            const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
+
+            const handleCapture = async () => {
+                setStatusMsg("분석 결과 리포트 생성 중...");
+                try {
+                    document.body.classList.add('capturing');
+                    setIsCapturing(true);
+                    await new Promise(r => setTimeout(r, 1200));
+                    const canvas = await html2canvas(captureRef.current, { 
+                        useCORS: true, 
+                        backgroundColor: "#ffffff",
+                        scale: 1.5,
+                        logging: false
+                    });
+                    setCapturedImage(canvas.toDataURL("image/jpeg", 0.9));
+                    setShowModal(true);
+                } catch (e) { setStatusMsg("생성 실패"); } finally { 
+                    document.body.classList.remove('capturing'); 
+                    setIsCapturing(false); 
+                    setStatusMsg(""); 
+                }
+            };
+
+            const shareToSystem = async () => {
+                try {
+                    let shareText = `[그랜드썬] 수익 분석 리포트\n\n`;
+                    shareText += `■ 분석 조건\n`;
+                    shareText += `- 설비용량: ${capacity.toFixed(3)} kW\n`;
+                    shareText += `- 총투자비: ${totalInvestmentWon.toLocaleString()} 원\n`;
+                    if (loanActive) {
+                        shareText += `- 대출조건: ${loanPrincipal.toLocaleString()} 원 (금리 ${loanInterest}%, ${loanGrace}년 거치 / ${loanPeriod}년 상환)\n`;
+                    } else {
+                        shareText += `- 대출조건: 미적용\n`;
+                    }
+                    shareText += `- 설치환경: 모듈 ${moduleAngle}°, 발전 ${baseGenTime}h\n\n`;
+                    shareText += `■ 주요 수익 지표\n`;
+                    shareText += `- 30년 매출: ${formatToEok(yearlyData[29].cumRevenue)} 억\n`;
+                    shareText += `- 30년 순익: ${formatToEok(yearlyData[29].cumProfit)} 억\n`;
+                    shareText += `- 월 매출액: ${(avgMonthlyRevenue/10000).toFixed(0)} 만원\n`;
+                    shareText += `- 회수 시점: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
+
+                    const response = await fetch(capturedImage);
+                    const blob = await response.blob();
+                    const file = new File([blob], `GrandSun_Analysis.jpg`, { type: "image/jpeg" });
+                    if (navigator.share) {
+                        await navigator.share({ 
+                            title: '수익 분석 리포트', 
+                            text: shareText,
+                            files: [file] 
+                        });
+                    } else { 
+                        const link = document.createElement('a'); 
+                        link.href = capturedImage; 
+                        link.download = "리포트.jpg"; 
+                        link.click(); 
+                    }
+                } catch (e) { setStatusMsg("전송 실패"); }
+            };
+
+            return (
+                <div className="app-shell pb-24">
+                    <div className="bg-slate-900 text-white px-8 py-5 flex justify-between items-center no-capture shadow-lg sticky top-0 z-50">
+                        <div className="flex items-center gap-6">
+                            <img src="./1775708560922.png" alt="Logo" className="h-10 brightness-0 invert" />
+                            <div className="h-6 w-[2px] bg-slate-700"></div>
+                            <span className="text-xl italic uppercase font-black">Profit Master</span>
+                        </div>
+                        <button onClick={handleCapture} className="bg-indigo-500 px-8 py-3 rounded-2xl font-black shadow-lg hover:bg-indigo-400 transition-colors active:scale-95">리포트 발송</button>
+                    </div>
+
+                    <div className="max-w-[1700px] mx-auto p-6 main-container" ref={captureRef}>
+                        {/* 캡처 전용 헤더 */}
+                        <div className="hidden capturing:block mb-16 border-b-8 border-slate-900 pb-12">
+                             <div className="flex justify-between items-center">
+                                <img src="./1775708560922.png" className="h-24 brightness-0" />
+                                <h1 className="text-7xl font-black italic">수익 분석 결과 보고서</h1>
+                             </div>
+                        </div>
+
+                        {/* 설정 구역 (3개 카드) */}
+                        <div className="settings-grid grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10 items-stretch">
+                            
+                            {/* 1. 투자 비용 */}
+                            <div className="glass-card p-8 flex flex-col">
+                                <h3 className="text-slate-400 text-sm border-l-8 border-indigo-500 pl-4 font-black mb-8">초기 투자비용 설정</h3>
+                                <div className="space-y-6 flex-1">
+                                    <div className="capture-row-container flex flex-col gap-2 bg-slate-50 p-6 rounded-2xl">
+                                        <label className="text-slate-400 text-sm">공사비 (원)</label>
+                                        <input type="text" value={formatInput(constCost)} onChange={(e)=>setConstCost(parseInput(e.target.value))} className="w-full bg-transparent text-right font-black text-3xl outline-none" />
+                                        <div className="capture-only-data">{(constCost).toLocaleString()}</div>
+                                    </div>
+                                    <div className="capture-row-container flex flex-col gap-2 bg-slate-50 p-6 rounded-2xl">
+                                        <label className="text-slate-400 text-sm">한전분담금 (원)</label>
+                                        <input type="text" value={formatInput(kepcoCost)} onChange={(e)=>setKepcoCost(parseInput(e.target.value))} className="w-full bg-transparent text-right font-black text-3xl outline-none" />
+                                        <div className="capture-only-data">{(kepcoCost).toLocaleString()}</div>
+                                    </div>
+                                    <div className="capture-row-container flex flex-col gap-2 bg-indigo-50 p-6 rounded-2xl">
+                                        <label className="text-indigo-600 text-sm">투자비 합계 (원)</label>
+                                        <div className="no-capture-ui text-4xl font-black text-indigo-600 text-right">{(constCost+kepcoCost).toLocaleString()}</div>
+                                        <div className="capture-only-data text-indigo-600">{(constCost+kepcoCost).toLocaleString()}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 2. 수익 변수 */}
+                            <div className="glass-card p-8 flex flex-col">
+                                <h3 className="text-slate-400 text-sm border-l-8 border-emerald-500 pl-4 font-black mb-8">수익 변수 실시간 조절</h3>
+                                <div className="grid grid-cols-4 gap-2 mb-12">
+                                    {[
+                                        { l: '용량(kW)', v: capacity.toFixed(3), c: 'text-indigo-600', isCap: true },
+                                        { l: '단가(원)', v: customPrice, c: 'text-orange-600' },
+                                        { l: '각도(°)', v: moduleAngle, c: 'text-slate-700' },
+                                        { l: '시간(h)', v: baseGenTime, c: 'text-slate-700' }
+                                    ].map((item, i) => (
+                                        <div key={i} className="bg-slate-50 p-3 rounded-2xl h-44 flex flex-col items-center justify-center border border-slate-100">
+                                            <label className="text-[10px] text-slate-400 mb-3 font-black uppercase">{item.l}</label>
+                                            {item.isCap ? (
+                                                <div className="capacity-ui-box no-capture-ui">
+                                                    <input type="text" value={capacityInput} onChange={(e)=>setCapacityInput(e.target.value)} className="capacity-input-native" />
+                                                    <div className="capacity-visual-layer text-center">
+                                                        <span className="text-indigo-600 text-xl font-black block">{capParts.int}</span>
+                                                        <span className="text-indigo-400 text-[10px]">{capParts.dec}</span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <span className={`no-capture-ui text-xl font-black ${item.c}`}>{item.v}</span>
+                                            )}
+                                            <div className={`capture-only-data text-center w-full ${item.c}`}>{item.v}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="space-y-6 no-capture px-2">
+                                    <div className="flex justify-between text-[10px] uppercase font-black"><span>Angle</span><span className="text-indigo-600 font-black">{moduleAngle}°</span></div>
+                                    <input type="range" min="5" max="15" value={moduleAngle} onChange={(e)=>setModuleAngle(Number(e.target.value))} />
+                                    <div className="flex justify-between text-[10px] uppercase font-black"><span>Sunshine</span><span className="text-indigo-600 font-black">{baseGenTime}h</span></div>
+                                    <input type="range" min="3.0" max="4.5" step="0.1" value={baseGenTime} onChange={(e)=>setBaseGenTime(Number(e.target.value))} />
+                                </div>
+                            </div>
+
+                            {/* 3. 금융 조건 */}
+                            <div className="glass-card p-8 flex flex-col">
+                                <div className="flex justify-between items-start mb-8">
+                                    <h3 className="text-slate-400 text-sm border-l-8 border-amber-500 pl-4 font-black">금융 조건 설정</h3>
+                                    <input type="checkbox" checked={loanActive} onChange={(e)=>setLoanActive(e.target.checked)} className="no-capture w-8 h-8 accent-amber-500" />
+                                </div>
+                                
+                                <div className={`space-y-6 flex-1 transition-opacity ${!loanActive ? 'opacity-30' : ''}`}>
+                                    <div className="capture-row-container flex flex-col gap-2 bg-slate-50 p-6 rounded-2xl">
+                                        <label className="text-slate-400 text-sm">금리 (%)</label>
+                                        <input type="text" value={loanInterest} disabled={!loanActive} onChange={(e)=>setLoanInterest(e.target.value)} className="w-full bg-transparent text-right font-black text-3xl outline-none" />
+                                        <div className="capture-only-data">{loanActive ? loanInterest : '0'}%</div>
+                                    </div>
+                                    <div className="capture-row-container flex flex-col gap-2 bg-slate-50 p-6 rounded-2xl">
+                                        <label className="text-slate-400 text-sm">거치 / 상환</label>
+                                        <div className="no-capture-ui flex gap-3 justify-end items-center w-full">
+                                            <input type="text" value={loanGrace} disabled={!loanActive} onChange={(e)=>setLoanGrace(parseInput(e.target.value))} className="w-16 text-center font-black text-2xl bg-white/50 rounded-xl p-1" />
+                                            <span className="text-slate-300">/</span>
+                                            <input type="text" value={loanPeriod} disabled={!loanActive} onChange={(e)=>setLoanPeriod(parseInput(e.target.value))} className="w-16 text-center font-black text-2xl bg-white/50 rounded-xl p-1" />
+                                        </div>
+                                        <div className="capture-only-data">{loanGrace}년 / {loanPeriod}년</div>
+                                    </div>
+                                    <div className="capture-row-container flex flex-col gap-2 bg-amber-50 p-6 rounded-2xl">
+                                        <label className="text-amber-700 text-sm">대출 원금 (원)</label>
+                                        <input type="text" value={formatInput(loanPrincipal)} disabled={!loanActive} onChange={(e)=>setLoanPrincipal(parseInput(e.target.value))} className="w-full bg-transparent text-right font-black text-3xl outline-none text-amber-700" />
+                                        <div className="capture-only-data text-amber-700">{(loanActive ? loanPrincipal : 0).toLocaleString()}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 주요 지표 (모바일 카드 간격 넓힘) */}
+                        <div className="metric-grid-scroll mb-10 px-4">
+                            {[
+                                { l: '30년 매출', v: formatToEok(yearlyData[29].cumRevenue), c: 'from-slate-800 to-slate-900', u: '억' },
+                                { l: '30년 순익', v: formatToEok(yearlyData[29].cumProfit), c: 'from-indigo-600 to-indigo-800', u: '억' },
+                                { l: '월 매출액', v: (avgMonthlyRevenue/10000).toFixed(0), c: 'from-emerald-500 to-emerald-700', u: '만원' },
+                                { l: '회수 시점', v: `${paybackDetail.year}년 ${paybackDetail.month}개월`, c: 'from-orange-500 to-orange-600', isBep: true }
+                            ].map((x, i)=>(
+                                <div key={i} className={`bg-gradient-to-br ${x.c} p-10 rounded-[40px] text-white shadow-xl flex flex-col justify-center metric-card`}>
+                                    <p className="opacity-70 text-lg uppercase mb-4 font-black tracking-widest metric-title text-center">{x.l}</p>
+                                    <div className="flex items-baseline justify-center gap-2">
+                                        <span className={`font-black italic tracking-tighter metric-value ${x.isBep ? 'text-4xl' : 'text-8xl'}`}>{x.v}</span>
+                                        {x.u && <span className="text-2xl opacity-60 font-bold metric-unit">{x.u}</span>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* 그래프 (캡처 시 제외 / 누적순익 억 단위 표시) */}
+                        <div className="glass-card p-12 mb-10 no-capture overflow-hidden">
+                            <div className="flex justify-between items-center mb-12">
+                                <h2 className="text-4xl border-b-8 border-indigo-500 inline-block pb-4 font-black uppercase">Profit Forecast Graph</h2>
+                                <div className="text-rose-500 font-black flex items-center gap-2">
+                                    <div className="w-4 h-4 rounded-full bg-rose-500"></div>
+                                    투자 원금선
+                                </div>
+                            </div>
+                            <div className="chart-scroll-container">
+                                <div className="h-[600px] min-w-[1500px] w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={yearlyData} margin={{ top: 80, right: 30, left: 40, bottom: 40 }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                            <XAxis dataKey="year" tick={{...chartFontConfig, fontSize: 14}} axisLine={false} tickLine={false} tickFormatter={(v)=>v+'y'} />
+                                            <YAxis tick={{...chartFontConfig, fontSize: 14}} axisLine={false} tickLine={false} width={80} tickFormatter={(v)=>(v/100000).toFixed(0)+'억'} />
+                                            <Tooltip 
+                                                contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.1)' }}
+                                                formatter={(value, name) => {
+                                                    if (name === "cumProfit") return [`${(value / 100000).toFixed(2)}억`, "누적 순이익"];
+                                                    return [value, name];
+                                                }}
+                                            />
+                                            <ReferenceLine y={equityWon/1000} stroke="#f43f5e" strokeWidth={4} strokeDasharray="10 10" />
+                                            {paybackDetail.year !== "-" && (
+                                                <ReferenceLine x={Number(paybackDetail.year)} stroke="#10b981" strokeWidth={6}>
+                                                    <Label 
+                                                        value={`BEP : ${paybackDetail.year}년 ${paybackDetail.month}개월`} 
+                                                        position="top" 
+                                                        fill="#10b981" 
+                                                        style={{...chartFontConfig, fontSize: 24}} 
+                                                        offset={40} 
+                                                    />
+                                                </ReferenceLine>
+                                            )}
+                                            <Area type="monotone" dataKey="cumProfit" stroke="#4f46e5" strokeWidth={10} fillOpacity={0.1} fill="#4f46e5" />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 상세 실적 표 (캡처 시 삭제 유지) */}
+                        <div className="glass-card overflow-hidden detailed-table mt-10 no-capture">
+                            <div className="bg-slate-900 text-white px-10 py-8 text-xl uppercase tracking-widest font-black flex justify-between">
+                                <span>Simulation Performance Summary</span>
+                                <span className="opacity-50">(단위: 백만 KRW)</span>
+                            </div>
+                            <div className="table-container">
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 text-slate-400 uppercase border-b-4 border-slate-100 font-black">
+                                        <tr>
+                                            <th className="text-center">년차</th>
+                                            <th className="text-right">매출액</th>
+                                            <th className="text-right text-rose-400">유지비</th>
+                                            <th className="text-right text-amber-500">이자</th>
+                                            <th className="text-right text-amber-700">원금</th>
+                                            <th className="text-right">누적매출</th>
+                                            <th className="text-right text-indigo-600 bg-indigo-50/30">누적순익</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 text-slate-600 font-black">
+                                        {yearlyData.map((r, i)=>(
+                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                <td className="text-center border-r-4 border-slate-50 font-black">{r.year}년차</td>
+                                                <td className="text-right font-black">{(r.revenue/1000).toFixed(1)}백</td>
+                                                <td className="text-right text-rose-400/80 font-black">{(r.opCost/1000).toFixed(1)}백</td>
+                                                <td className="text-right text-amber-500/80 font-black">{(r.loanInterest/1000).toFixed(1)}백</td>
+                                                <td className="text-right text-amber-700/80 font-black">{(r.principalRepay/1000).toFixed(1)}백</td>
+                                                <td className="text-right font-black">{(r.cumRevenue/1000).toFixed(1)}백</td>
+                                                <td className="text-right font-black text-indigo-600 bg-indigo-50/10">{(r.cumProfit/1000).toFixed(1)}백</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="p-16 bg-slate-50 border-t-4 border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                 <div className="text-2xl text-slate-400 tracking-[0.4em] font-black uppercase text-center">제작: 조성현 (CHO SEONG HYEON)</div>
+                                 <div className="text-xl text-slate-300 italic uppercase">GrandSun Tech Profit System v5.9</div>
+                            </div>
+                        </div>
+
+                        {/* 하단 정보 (캡처 시 노출) */}
+                        <div className="hidden capturing:flex justify-between items-center border-t-4 border-slate-100 pt-10">
+                            <div className="text-3xl text-slate-400 font-black">GrandSun Technology Analysis System</div>
+                            <div className="text-2xl text-slate-300 italic font-black uppercase tracking-widest">Profit Master simulation report</div>
+                        </div>
+                    </div>
+
+                    {/* 모달 */}
+                    {showModal && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-xl">
+                            <div className="bg-white w-full max-w-5xl rounded-[50px] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+                                <div className="p-10 border-b flex justify-between items-center bg-slate-50/50">
+                                    <h3 className="text-2xl font-black italic uppercase">Preview Analysis Report</h3>
+                                    <button onClick={()=>setShowModal(false)} className="text-5xl text-slate-300 hover:text-slate-900 transition-colors">&times;</button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-10 bg-slate-100 text-center">
+                                    <img src={capturedImage} className="inline-block w-full rounded-3xl shadow-lg border-8 border-white" />
+                                </div>
+                                <div className="p-10">
+                                    <button onClick={shareToSystem} className="w-full bg-indigo-600 text-white py-8 rounded-[30px] text-3xl font-black shadow-xl hover:bg-indigo-700 transition-colors active:scale-95">사업주에게 리포트 전송</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {statusMsg && (
+                        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[110] bg-slate-900 text-white px-10 py-5 rounded-full text-lg flex items-center gap-4 font-black shadow-2xl border border-white/20">
+                            <div className="w-3 h-3 bg-indigo-500 rounded-full animate-ping"></div>{statusMsg}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
