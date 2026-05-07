@@ -13,7 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK (호환성 모드) -->
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore-compat.js"></script>
@@ -106,7 +106,7 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 1. 유틸리티 함수 (전역 정의로 ReferenceError 방지) ---
+        // --- 1. 유틸리티 함수 (전역 최상단 정의: ReferenceError 방지) ---
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
         const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
         const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
@@ -120,9 +120,9 @@
             return parts.map((part, i) => part.toLowerCase() === keyword.toLowerCase() ? <span key={i} className="highlight">{part}</span> : part);
         };
 
-        // --- 2. Firebase 초기화 및 도메인 대응 (Offline Fallback 지원) ---
+        // --- 2. Firebase 초기화 및 도메인 대응 엔진 ---
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v9-stable';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v9-stable-web';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         
         try {
@@ -133,7 +133,7 @@
                 fbAuth = firebase.auth();
                 fbDb = firebase.firestore();
             }
-        } catch (e) { }
+        } catch (e) { console.warn("Firebase not active in this domain. Switching to local engine."); }
 
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -147,7 +147,7 @@
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
             
-            // --- 수치 상태 (LocalStorage 로드 우선) ---
+            // --- 입력 상태 (LocalStorage 1순위) ---
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -172,7 +172,7 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 3. useMemo 로직 (컴포넌트 최상단 정의) ---
+            // --- 3. useMemo 로직 (상단 정의로 참조 오류 방지) ---
             const combinedPolicyFiles = useMemo(() => {
                 const mainFiles = policyDocs.filter(doc => (doc.chunkIndex === 0 || doc.chunkIndex === undefined));
                 return mainFiles.map(main => {
@@ -279,11 +279,11 @@
                 });
             }, [capacity, baseGenTime, selfRates]);
 
-            // --- 4. 영속성 하이브리드 엔진 (LocalStorage + Firebase) ---
+            // --- 4. 데이터 영속성 (LocalStorage + Firebase 하이브리드) ---
             useEffect(() => {
                 const loadSettings = async () => {
-                    // LocalStorage 우선 로드 (서버 설정 없어도 작동)
-                    const localData = localStorage.getItem('grandsun_settings_v9');
+                    // 1. LocalStorage 로드 (서버 설정 없어도 즉시 작동)
+                    const localData = localStorage.getItem('grandsun_settings_stable');
                     if (localData) {
                         try {
                             const d = JSON.parse(localData);
@@ -301,44 +301,47 @@
                             if (d.voltageType) setVoltageType(d.voltageType);
                             if (d.selectionType) setSelectionType(d.selectionType);
                             if (d.mode) setMode(d.mode);
+                            if (d.localDocs) setPolicyDocs(d.localDocs);
                         } catch(e) {}
                     }
 
-                    // Firebase 사용 가능 시 비동기 로드
+                    // 2. Firebase 초기화 시도
                     if (fbAuth && fbDb) {
                         try {
-                            const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                            if (token) await fbAuth.signInWithCustomToken(token);
-                            else await fbAuth.signInAnonymously();
+                            const initAuth = async () => {
+                                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                                if (token) await fbAuth.signInWithCustomToken(token);
+                                else await fbAuth.signInAnonymously();
+                            };
+                            await initAuth();
                             const cu = fbAuth.currentUser;
                             if (cu) {
                                 setUser(cu);
                                 const doc = await fbDb.collection('artifacts').doc(appId).collection('users').doc(cu.uid).collection('settings').doc('current').get();
-                                if (doc.exists) { /* Cloud data logic */ }
+                                if (doc.exists) { /* Cloud Logic */ }
                             }
+                            const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
+                            col.onSnapshot(s => {
+                                if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()})));
+                            }, e => {});
                         } catch(e) {}
                     }
                     isInitialLoadDone.current = true;
                 };
                 loadSettings();
-
-                if (fbDb) {
-                    const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
-                    return col.onSnapshot(s => setPolicyDocs(s.docs.map(d => ({id: d.id, ...d.data()}))), e => {});
-                }
             }, []);
 
             useEffect(() => {
                 if (!isInitialLoadDone.current) return;
-                const payload = { capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, lastUpdated: new Date() };
-                localStorage.setItem('grandsun_settings_v9', JSON.stringify(payload));
+                const payload = { capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, localDocs: policyDocs, lastUpdated: new Date() };
+                localStorage.setItem('grandsun_settings_stable', JSON.stringify(payload));
                 if (user && fbDb) {
                     const timerId = setTimeout(async () => {
                         try { await fbDb.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc('current').set(payload, { merge: true }); } catch(e) {}
                     }, 1000);
                     return () => clearTimeout(timerId);
                 }
-            }, [capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, user]);
+            }, [capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, user, policyDocs]);
 
             // --- 5. 핸들러 ---
             const handleConstCostChange = (e) => { const val = parseInput(e.target.value); setConstCost(val); setLoanPrincipal(Math.round(val * 0.8)); };
@@ -348,10 +351,9 @@
             const handlePolicyFileUpload = async (e) => {
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
-                if (!fbDb) { setStatusMsg("클라우드 설정이 없습니다."); setTimeout(() => setStatusMsg(""), 3000); return; }
-                let cu = fbAuth.currentUser;
-                if (!cu) { try { const r = await fbAuth.signInAnonymously(); cu = r.user; setUser(cu); } catch(err) { setStatusMsg("인증 실패"); return; } }
-                const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
+
+                const col = fbDb ? fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles') : null;
+                
                 for (const file of files) {
                     const isPdf = file.type === 'application/pdf';
                     let fData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
@@ -370,12 +372,20 @@
                             }
                             fData.content = fullT.substring(0, 500000); fData.pages = JSON.stringify(pData);
                         } else { fData.content = "(문서 파일)"; }
+                        
                         const dUrl = await new Promise(r => { const rd = new FileReader(); rd.onload = ev => r(ev.target.result); rd.readAsDataURL(file); });
-                        const CHUNK = 800000; const numC = Math.ceil(dUrl.length / CHUNK);
-                        for (let i = 0; i < numC; i++) {
-                            await col.add({ ...fData, chunkIndex: i, isMultipart: numC > 1, dataUrlPart: dUrl.substring(i * CHUNK, (i + 1) * CHUNK), totalChunks: numC });
+                        
+                        if (col) {
+                            const CHUNK = 800000; const numC = Math.ceil(dUrl.length / CHUNK);
+                            for (let i = 0; i < numC; i++) {
+                                await col.add({ ...fData, chunkIndex: i, isMultipart: numC > 1, dataUrlPart: dUrl.substring(i * CHUNK, (i + 1) * CHUNK), totalChunks: numC });
+                            }
+                            setStatusMsg(`클라우드 저장 완료: ${file.name}`);
+                        } else {
+                            // Offline 모드: 로컬 상태에 추가
+                            setPolicyDocs(prev => [...prev, { ...fData, dataUrl: dUrl }]);
+                            setStatusMsg(`로컬 세션 저장 완료: ${file.name}`);
                         }
-                        setStatusMsg(`저장 완료: ${file.name}`);
                     } catch (err) { setStatusMsg("저장 실패"); }
                 }
                 setTimeout(() => setStatusMsg(""), 2000);
@@ -389,7 +399,7 @@
             };
 
             const handleCapture = async () => {
-                setStatusMsg("화면 구성 캡처 중...");
+                setStatusMsg("보고서 구성 중...");
                 try {
                     document.body.classList.add('capturing'); setIsCapturing(true); await new Promise(r => setTimeout(r, 4000));
                     const can = await html2canvas(captureRef.current, { useCORS: true, backgroundColor: "#f8fafc", scale: 2, scrollX: 0, scrollY: -window.scrollY, windowWidth: 1600 });
@@ -402,16 +412,16 @@
             const getSummaryText = () => {
                 const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
                 let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
-                if (loanActive) t += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanGrace} 거치/${loanPeriod} 상환)\n`;
-                if (mode === 'rps') { t += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n■ 월평균 매출액: ${formatToBaekmanTooltip(avgMonthlyRevenue)}\n`; } 
-                else { const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n■ 월평균 절감액: ${formatToBaekmanTooltip(total1Y/12)}\n`; }
+                if (loanActive) t += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanPeriod}년 상환)\n`;
+                if (mode === 'rps') { t += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n`; } 
+                else { const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n`; }
                 t += `■ BEP: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
                 return t;
             };
 
+            // --- 6. 렌더링 ---
             return (
                 <div className="app-shell pb-20 font-black" ref={captureRef}>
-                    {/* Header */}
                     <div className="bg-slate-900 text-white px-4 sm:px-8 py-4 flex flex-col sm:flex-row justify-between items-center no-capture shadow-lg sticky top-0 z-[100] gap-4">
                         <div className="flex items-center gap-4 sm:gap-6">
                             <img src="./1775708560922.png" alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert cursor-pointer" onClick={() => window.location.reload()} />
@@ -432,12 +442,12 @@
                                     <h2 className="text-3xl sm:text-5xl border-l-10 border-indigo-500 pl-8 mb-12 font-black uppercase tracking-tighter">제도변경 및 업데이트 문서 통합 저장소</h2>
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                                         <div className="space-y-6">
-                                            <h3 className="text-xl text-slate-400 font-black">업데이트 파일 추가 (실시간 클라우드 공유)</h3>
-                                            <label className="file-drop-zone flex flex-col items-center justify-center h-72 cursor-pointer">
+                                            <h3 className="text-xl text-slate-400 font-black">업데이트 파일 추가</h3>
+                                            <label className="file-drop-zone flex flex-col items-center justify-center h-72 cursor-pointer border-3 border-dashed border-slate-300 rounded-[40px] hover:border-indigo-500 transition-all bg-slate-50/50">
                                                 <div className="flex flex-col items-center justify-center p-10 text-center">
                                                     <div className="bg-indigo-100 p-6 rounded-full mb-6 text-indigo-600"><svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg></div>
                                                     <p className="mb-2 text-2xl font-black">파일 업로드하기</p>
-                                                    <p className="text-sm text-slate-400 font-bold">1MB 이상의 파일도 조각내어 안전하게 공유됩니다.</p>
+                                                    <p className="text-sm text-slate-400 font-bold">PDF, 이미지 등 자유롭게 업로드하여 공유하세요.</p>
                                                 </div>
                                                 <input type="file" className="hidden" multiple onChange={handlePolicyFileUpload} />
                                             </label>
@@ -451,9 +461,8 @@
                                             <div className="p-6 bg-slate-50 rounded-[32px] border border-slate-100">
                                                 <h4 className="text-sm text-indigo-600 mb-2 uppercase font-black tracking-widest">Storage & Search Guide</h4>
                                                 <ul className="text-xs text-slate-400 font-bold space-y-2">
-                                                    <li>• <span className="text-indigo-600">Cloud Sync</span>: 어떤 기기에서 접속해도 동일한 파일 목록이 유지됩니다.</li>
-                                                    <li>• <span className="text-indigo-600">Smart Chunking</span>: 큰 파일도 에러 없이 자동으로 전송됩니다.</li>
-                                                    <li>• <span className="text-indigo-600">Search</span>: 검색 시 문서 내부의 모든 발견 위치(페이지)를 찾아 강조해 줍니다.</li>
+                                                    <li>• <span className="text-indigo-600">Cross Domain Ready</span>: 어떤 환경에서도 중단 없이 파일 업로드가 가능합니다.</li>
+                                                    <li>• <span className="text-indigo-600">Deep Search</span>: 검색 시 문서 내부의 모든 검색 위치(페이지)를 한눈에 보여줍니다.</li>
                                                 </ul>
                                             </div>
                                         </div>
@@ -462,7 +471,7 @@
                                 <div className="glass-card overflow-hidden">
                                     <div className="bg-slate-900 text-white px-10 py-10 flex justify-between items-center">
                                         <span className="text-2xl font-black uppercase tracking-widest flex items-center gap-4"><div className="w-4 h-10 bg-emerald-500 rounded-full"></div>Shared Policy Document List</span>
-                                        <span className="bg-emerald-600/30 text-emerald-300 px-6 py-2 rounded-2xl text-base font-black border border-emerald-500/30">{policyDocs.length / (policyDocs[0]?.totalChunks || 1)} DOCUMENTS SYNCED</span>
+                                        <span className="bg-emerald-600/30 text-emerald-300 px-6 py-2 rounded-2xl text-base font-black border border-emerald-500/30">{filteredPolicyFiles.length} DOCUMENTS LISTED</span>
                                     </div>
                                     <div className="table-container">
                                         <table className="w-full text-left">
@@ -492,6 +501,7 @@
                                                             </td>
                                                             <td className="p-8 text-center flex items-center justify-center gap-4">
                                                                 <button onClick={() => handleViewFile(file)} className="btn-view" title="파일 열기"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg></button>
+                                                                {user && <button onClick={() => handleDeletePolicyFile(file.parentId)} className="text-rose-400 hover:text-rose-600 ml-4"><svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"></path></svg></button>}
                                                             </td>
                                                         </tr>
                                                     );
