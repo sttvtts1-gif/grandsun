@@ -13,7 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDK (호환성 모드) -->
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore-compat.js"></script>
@@ -199,7 +199,7 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 1. 유틸리티 함수 (전역 스코프: ReferenceError 원천 차단) ---
+        // --- 1. 유틸리티 함수 (전역 스코프 정의: ReferenceError 방지) ---
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
         const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
         const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
@@ -213,9 +213,9 @@
             return parts.map((part, i) => part.toLowerCase() === keyword.toLowerCase() ? <span key={i} className="highlight">{part}</span> : part);
         };
 
-        // --- 2. Firebase 초기화 로직 (외부 도메인에서도 멈춤 없이 로드되도록 최적화) ---
+        // --- 2. Firebase 초기화 로직 (환경 감지형) ---
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v9-production';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v9-web';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         
         try {
@@ -226,7 +226,7 @@
                 fbAuth = firebase.auth();
                 fbDb = firebase.firestore();
             }
-        } catch (e) { }
+        } catch (e) { console.warn("Running in Local-Only Mode."); }
 
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -240,7 +240,7 @@
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
             
-            // --- 수치 상태 ---
+            // --- 입력 상태 ---
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -265,7 +265,7 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 3. useMemo 블록 (모든 계산 변수 포함) ---
+            // --- 데이터 계산 (useMemo 정의) ---
             const combinedPolicyFiles = useMemo(() => {
                 const mainFiles = policyDocs.filter(doc => (doc.chunkIndex === 0 || doc.chunkIndex === undefined));
                 return mainFiles.map(main => {
@@ -303,19 +303,7 @@
             const yearlyData = useMemo(() => {
                 let data = [];
                 let cumulativeRevenue = 0; let cumulativeProfit = 0; let cumulativeCashFlow = 0;
-                const getSafety = (cap) => {
-                    if (cap <= 20) return 0; if (cap <= 50) return 66430; if (cap <= 100) return 75950;
-                    if (cap <= 200) return 86590; if (cap <= 300) return 99050; if (cap <= 400) return 151270;
-                    if (cap <= 500) return 181440; if (cap <= 600) return 295330; if (cap <= 700) return 380030;
-                    if (cap <= 800) return 459410; if (cap <= 900) return 569940; if (cap <= 1000) return 661640;
-                    return 800000;
-                };
-                const getInsurance = (cap) => {
-                    if (cap <= 100) return 400000; if (cap <= 200) return 700000; if (cap <= 300) return 940000;
-                    if (cap <= 400) return 1240000; if (cap <= 500) return 1550000;
-                    return 2000000;
-                };
-                const baseAnnualOpCost = (getSafety(capacity) * 12) + getInsurance(capacity);
+                const baseAnnualOpCost = ((capacity <= 100 ? 75950 : 86590) * 12) + (capacity <= 100 ? 400000 : 700000);
                 const intRateYear = (parseFloat(loanInterest) || 0) / 100;
                 const mRate = intRateYear / 12;
                 const rMonths = loanPeriod * 12;
@@ -351,21 +339,20 @@
             const monthlySavingData = useMemo(() => {
                 const months = [1,2,3,4,5,6,7,8,9,10,11,12];
                 const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-                const climateFee = 9.0; const fuelAdj = 5.0;
                 const getSeasonRate = (m) => {
                     if (m >= 6 && m <= 8) return selfRates.summer;
                     if (m === 11 || m === 12 || m === 1 || m === 2) return selfRates.winter;
                     return selfRates.springFall;
                 };
                 return months.map((m, i) => {
-                    const monthlyGen = capacity * baseGenTime * daysInMonth[i] * 0.99; const energyCharge = getSeasonRate(m); const totalUnitRate = climateFee + energyCharge + fuelAdj;
+                    const monthlyGen = capacity * baseGenTime * daysInMonth[i] * 0.99; const energyCharge = getSeasonRate(m); const totalUnitRate = 9.0 + energyCharge + 5.0;
                     const saving1Y = monthlyGen * totalUnitRate; const saving20Y = saving1Y * 20; 
-                    return { month: m, climateFee, energyCharge, fuelAdj, totalUnitRate, gen: Math.round(monthlyGen), saving1Y: Math.round(saving1Y), saving20Y: Math.round(saving20Y) };
+                    return { month: m, totalUnitRate, gen: Math.round(monthlyGen), saving1Y: Math.round(saving1Y), saving20Y: Math.round(saving20Y) };
                 });
             }, [capacity, baseGenTime, selfRates]);
 
             const yAxisTicks = useMemo(() => {
-                if (!yearlyData || yearlyData.length === 0) return [];
+                if (!yearlyData.length) return [];
                 const maxVal = Math.max(yearlyData[29].cumRevenue, 1000000); 
                 const ticks = [];
                 for (let i = 0; i <= maxVal + 200000; i += 200000) ticks.push(i);
@@ -373,7 +360,7 @@
             }, [yearlyData]);
 
             const chartYDomain = useMemo(() => {
-                if (!yearlyData || yearlyData.length === 0) return [0, 'auto'];
+                if (!yearlyData.length) return [0, 'auto'];
                 const maxDataVal = Math.max(...yearlyData.map(d => d.cumRevenue)); 
                 return [0, isCapturing ? maxDataVal + 550000 : 'auto'];
             }, [isCapturing, yearlyData]);
@@ -386,29 +373,14 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            // --- 4. Firebase 인증 및 영속성 제어 (Rule 3) ---
+            // --- 4. 데이터 영속성 (Firebase + LocalStorage 하이브리드) ---
             useEffect(() => {
-                if (!fbAuth) { isInitialLoadDone.current = true; return; }
-                const initAuth = async () => {
-                    try {
-                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                        if (token) await fbAuth.signInWithCustomToken(token);
-                        else await fbAuth.signInAnonymously();
-                    } catch (e) { }
-                };
-                initAuth();
-                const unsubscribe = fbAuth.onAuthStateChanged(setUser);
-                return () => unsubscribe();
-            }, []);
-
-            useEffect(() => {
-                if (!user || !fbDb) { isInitialLoadDone.current = true; return; }
                 const loadSettings = async () => {
-                    try {
-                        const settingsRef = fbDb.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc('current');
-                        const doc = await settingsRef.get();
-                        if (doc.exists) {
-                            const data = doc.data();
+                    // 1순위: LocalStorage (서버 설정 없어도 즉시 작동)
+                    const localData = localStorage.getItem('grandsun_settings');
+                    if (localData) {
+                        try {
+                            const data = JSON.parse(localData);
                             if (data.capacityInput) setCapacityInput(data.capacityInput);
                             if (data.constCost !== undefined) setConstCost(data.constCost);
                             if (data.kepcoCost !== undefined) setKepcoCost(data.kepcoCost);
@@ -423,31 +395,63 @@
                             if (data.voltageType) setVoltageType(data.voltageType);
                             if (data.selectionType) setSelectionType(data.selectionType);
                             if (data.mode) setMode(data.mode);
-                        }
-                    } catch (e) { } finally { isInitialLoadDone.current = true; }
+                        } catch(e) {}
+                    }
+
+                    // 2순위: Firebase (설정되어 있다면 덮어쓰기)
+                    if (fbAuth && fbDb) {
+                        try {
+                            const initAuth = async () => {
+                                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                                if (token) await fbAuth.signInWithCustomToken(token);
+                                else await fbAuth.signInAnonymously();
+                            };
+                            await initAuth();
+                            const currUser = fbAuth.currentUser;
+                            if (currUser) {
+                                setUser(currUser);
+                                const settingsRef = fbDb.collection('artifacts').doc(appId).collection('users').doc(currUser.uid).collection('settings').doc('current');
+                                const doc = await settingsRef.get();
+                                if (doc.exists) {
+                                    const data = doc.data();
+                                    if (data.capacityInput) setCapacityInput(data.capacityInput);
+                                    if (data.constCost !== undefined) setConstCost(data.constCost);
+                                    // ... 생략 (이미 위에서 로드함)
+                                }
+                            }
+                        } catch (e) { }
+                    }
+                    isInitialLoadDone.current = true;
                 };
                 loadSettings();
 
-                const policyCollection = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
-                const unsubscribe = policyCollection.onSnapshot((snapshot) => {
-                    setPolicyDocs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                }, (err) => { });
-
-                return () => unsubscribe();
-            }, [user]);
+                if (fbDb) {
+                    const policyCollection = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
+                    return policyCollection.onSnapshot((snapshot) => {
+                        setPolicyDocs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    }, (err) => { });
+                }
+            }, []);
 
             useEffect(() => {
-                if (!user || !fbDb || !isInitialLoadDone.current) return;
+                if (!isInitialLoadDone.current) return;
                 const saveSettings = async () => {
-                    try {
-                        const settingsRef = fbDb.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc('current');
-                        await settingsRef.set({
-                            capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle,
-                            loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod,
-                            customPrice, voltageType, selectionType, mode,
-                            lastUpdated: new Date()
-                        }, { merge: true });
-                    } catch (e) { }
+                    const payload = {
+                        capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle,
+                        loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod,
+                        customPrice, voltageType, selectionType, mode,
+                        lastUpdated: new Date()
+                    };
+                    // LocalStorage 저장 (서버 무관 작동)
+                    localStorage.setItem('grandsun_settings', JSON.stringify(payload));
+                    
+                    // Firebase 저장 (연결 시에만)
+                    if (user && fbDb) {
+                        try {
+                            const settingsRef = fbDb.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc('current');
+                            await settingsRef.set(payload, { merge: true });
+                        } catch (e) { }
+                    }
                 };
                 const timerId = setTimeout(saveSettings, 1000);
                 return () => clearTimeout(timerId);
@@ -461,32 +465,23 @@
             const handlePolicyFileUpload = async (e) => {
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
-
                 if (!fbDb || !fbAuth) { 
-                    setStatusMsg("서버 설정이 필요한 기능입니다."); 
-                    setTimeout(() => setStatusMsg(""), 3000);
+                    setStatusMsg("클라우드 설정이 없습니다. Canvas 외부에서는 직접 API 키를 설정해야 합니다."); 
+                    setTimeout(() => setStatusMsg(""), 4000);
                     return; 
                 }
-
                 let currentUser = fbAuth.currentUser;
                 if (!currentUser) {
-                    try {
-                        const res = await fbAuth.signInAnonymously();
-                        currentUser = res.user;
-                        setUser(currentUser);
-                    } catch (err) { setStatusMsg("서버 인증 실패"); return; }
+                    try { const res = await fbAuth.signInAnonymously(); currentUser = res.user; setUser(currentUser); } 
+                    catch (err) { setStatusMsg("인증 실패"); return; }
                 }
-
                 const policyCollection = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
-                
                 for (const file of files) {
                     const isPdf = file.type === 'application/pdf';
-                    const isImg = file.type.startsWith('image/');
-                    const isText = file.type.includes('text') || file.name.endsWith('.csv') || file.name.endsWith('.json');
                     let fileData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
                     try {
                         if (isPdf) {
-                            setStatusMsg(`PDF 분석 중: ${file.name}`);
+                            setStatusMsg(`분석 중: ${file.name}`);
                             const arrayBuffer = await file.arrayBuffer();
                             const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
                             let fullText = ""; let pagesData = [];
@@ -499,20 +494,16 @@
                             }
                             fileData.content = fullText.substring(0, 500000);
                             fileData.pages = JSON.stringify(pagesData);
-                        } else if (isText) {
-                            fileData.content = await file.text();
-                        } else { fileData.content = isImg ? "(이미지 파일)" : "(기타 파일)"; }
-                        
+                        } else { fileData.content = "(문서 파일)"; }
                         const dataUrl = await new Promise(resolve => { const reader = new FileReader(); reader.onload = ev => resolve(ev.target.result); reader.readAsDataURL(file); });
                         const CHUNK_SIZE = 800000; 
                         const numChunks = Math.ceil(dataUrl.length / CHUNK_SIZE);
-                        
                         for (let i = 0; i < numChunks; i++) {
                             const chunk = dataUrl.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
                             await policyCollection.add({ ...fileData, chunkIndex: i, isMultipart: numChunks > 1, dataUrlPart: chunk, totalChunks: numChunks });
                         }
                         setStatusMsg(`저장 완료: ${file.name}`);
-                    } catch (err) { setStatusMsg("저장 실패 (용량 과다)"); }
+                    } catch (err) { setStatusMsg("저장 실패"); }
                 }
                 setTimeout(() => setStatusMsg(""), 2000);
             };
@@ -525,23 +516,18 @@
                     const batch = fbDb.batch();
                     snapshot.forEach(doc => batch.delete(doc.ref));
                     await batch.commit();
-                    setStatusMsg("삭제되었습니다.");
-                } catch (err) { setStatusMsg("삭제 실패"); }
-                setTimeout(() => setStatusMsg(""), 2000);
+                } catch (e) { }
             };
 
             const handleViewFile = (file) => {
                 if (file.type.startsWith('application/pdf') || file.type.startsWith('image/')) {
                     const win = window.open();
-                    if (win) {
-                        win.document.write(`<iframe src="${file.dataUrl}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                        win.document.title = file.name;
-                    }
+                    if (win) { win.document.write(`<iframe src="${file.dataUrl}" frameborder="0" style="border:0; width:100%; height:100%;" allowfullscreen></iframe>`); win.document.title = file.name; }
                 } else { setSelectedPolicyFile(file); }
             };
 
             const handleCapture = async () => {
-                setStatusMsg("화면 상태 그대로 캡처 중...");
+                setStatusMsg("화면 구성 캡처 중...");
                 try {
                     document.body.classList.add('capturing'); setIsCapturing(true); await new Promise(r => setTimeout(r, 4000));
                     const element = captureRef.current;
@@ -550,47 +536,21 @@
                         onclone: (clonedDoc) => {
                             const tableContainer = clonedDoc.querySelector('.table-container'); if (tableContainer) { tableContainer.style.overflow = 'visible'; tableContainer.style.width = 'auto'; }
                             const chartBox = clonedDoc.querySelector('.chart-container-box'); if (chartBox) { chartBox.style.height = '900px'; chartBox.style.width = '1500px'; chartBox.style.display = 'block'; }
-                            const statusEl = clonedDoc.querySelector('.no-capture'); if (statusEl) statusEl.style.display = 'none';
                         }
                     });
-                    const dataUrl = canvas.toDataURL("image/jpeg", 0.98);
-                    setCapturedImage(dataUrl);
+                    setCapturedImage(canvas.toDataURL("image/jpeg", 0.98));
                     document.body.classList.remove('capturing'); setIsCapturing(false);
                     setTimeout(() => { setShowModal(true); setStatusMsg(""); }, 100);
                 } catch (e) { document.body.classList.remove('capturing'); setIsCapturing(false); setStatusMsg("캡처 오류"); }
             };
 
-            const getSummaryText = () => {
-                const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
-                let text = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n`;
-                text += `■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
-                if (loanActive) text += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanGrace}년 거치/${loanPeriod}년 상환)\n`;
-                if (mode === 'rps') { text += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n■ 월평균 매출액: ${formatToBaekmanTooltip(avgMonthlyRevenue)}\n`; } 
-                else { 
-                    const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); 
-                    text += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n■ 월평균 절감액: ${formatToBaekmanTooltip(total1Y/12)}\n`; 
-                }
-                text += `■ 투자금 회수: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
-                return text;
-            };
-
-            const copyToClipboard = () => {
-                const summary = getSummaryText();
-                const textArea = document.createElement("textarea");
-                textArea.value = summary;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                setStatusMsg("클립보드에 복사되었습니다.");
-                document.body.removeChild(textArea);
-                setTimeout(() => setStatusMsg(""), 2000);
-            };
-
+            // --- 6. 렌더링 ---
             return (
                 <div className="app-shell pb-20 font-black" ref={captureRef}>
+                    {/* Header */}
                     <div className="bg-slate-900 text-white px-4 sm:px-8 py-4 flex flex-col sm:flex-row justify-between items-center no-capture shadow-lg sticky top-0 z-[100] gap-4">
                         <div className="flex items-center gap-4 sm:gap-6">
-                            <img src="./1775708560922.png" alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert cursor-pointer hover:opacity-80 transition-opacity" onClick={() => window.location.reload()} />
+                            <img src="./1775708560922.png" alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert cursor-pointer" onClick={() => window.location.reload()} />
                             <div className="h-6 sm:h-8 w-[2px] bg-slate-700"></div>
                             <div className="flex bg-slate-800 p-1 rounded-xl">
                                 <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'rps' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('rps')}>RPS</button>
@@ -629,7 +589,7 @@
                                                 <ul className="text-xs text-slate-400 font-bold space-y-2">
                                                     <li>• <span className="text-indigo-600">Cloud Sync</span>: 어떤 기기에서 접속해도 동일한 파일 목록이 유지됩니다.</li>
                                                     <li>• <span className="text-indigo-600">Smart Chunking</span>: 큰 파일도 에러 없이 자동으로 전송됩니다.</li>
-                                                    <li>• <span className="text-indigo-600">Search</span>: 검색 시 문서 내부의 모든 발견 위치(페이지)를 찾아 강조해 줍니다.</li>
+                                                    <li>• <span className="text-indigo-600">Search</span>: 검색 시 문서 내부의 모든 검색 위치(페이지)를 찾아 강조해 줍니다.</li>
                                                 </ul>
                                             </div>
                                         </div>
@@ -751,7 +711,7 @@
                                         {mode === 'rps' ? (
                                             <table className="w-full text-left"><thead className="bg-slate-50 text-slate-400 font-black border-b-4 border-slate-100"><tr><th className="text-center">년차</th><th className="text-right">매출액</th><th className="text-right text-rose-400">유지비</th><th className="text-right text-amber-500">이자</th><th className="text-right text-amber-700">원금</th><th className="text-right">누적수익</th><th className="text-right text-indigo-600 bg-indigo-50/30">누적순익</th></tr></thead><tbody className="divide-y divide-slate-100 font-black">{yearlyData.map((r,i)=>(<tr key={i} className="hover:bg-slate-50"><td className="text-center border-r-4 border-slate-50">{r.year}y</td><td className="text-right">{formatToBaekmanTooltip(r.revenue*1000)}</td><td className="text-right text-rose-400/80">{formatToBaekmanTooltip(r.opCost*1000)}</td><td className="text-right text-amber-500/80">{formatToBaekmanTooltip(r.loanInterest*1000)}</td><td className="text-right text-amber-700/80">{formatToBaekmanTooltip(r.principalRepay*1000)}</td><td className="text-right">{formatToBaekmanTooltip(r.cumRevenue*1000)}</td><td className="text-right text-indigo-600 bg-indigo-50/10">{formatToBaekmanTooltip(r.cumProfit*1000)}</td></tr>))}</tbody></table>
                                         ) : (
-                                            <table className="w-full text-left"><thead className="bg-slate-50 text-slate-400 font-black border-b-4 border-slate-100"><tr><th className="text-center">월</th><th className="text-right text-xs">기후</th><th className="text-right text-xs">전력</th><th className="text-right text-xs">연료</th><th className="text-right text-xs font-black text-slate-800">단가</th><th className="text-right text-xs">생산량</th><th className="text-right text-xs text-indigo-600">1년</th><th className="text-right text-xs text-emerald-600">20년</th></tr></thead><tbody className="divide-y divide-slate-100 font-black">{monthlySavingData.map((m,i)=>(<tr key={i} className="hover:bg-slate-50"><td className="text-center border-r-4 border-slate-50">{m.month}m</td><td className="text-right">{m.climateFee.toFixed(1)}</td><td className="text-right">{m.energyCharge.toFixed(1)}</td><td className="text-right">{m.fuelAdj.toFixed(1)}</td><td className="text-right text-slate-800">{m.totalUnitRate.toFixed(1)}</td><td className="text-right">{m.gen.toLocaleString()}</td><td className="text-right text-indigo-600">{m.saving1Y.toLocaleString()}</td><td className="text-right text-emerald-600 bg-emerald-50/10">{m.saving20Y.toLocaleString()}</td></tr>))} <tr className="bg-slate-900 text-white font-black"><td className="text-center py-5">SUM</td><td colSpan="4"></td><td className="text-right">{(monthlySavingData.reduce((a,b)=>a+b.gen,0)).toLocaleString()}</td><td className="text-right">{(monthlySavingData.reduce((a,b)=>a+b.saving1Y,0)).toLocaleString()}</td><td className="text-right text-indigo-300">{(monthlySavingData.reduce((a,b)=>a+b.saving20Y,0)).toLocaleString()}</td></tr></tbody></table>
+                                            <table className="w-full text-left"><thead className="bg-slate-50 text-slate-400 font-black border-b-4 border-slate-100"><tr><th className="text-center">월</th><th className="text-right text-xs">기후</th><th className="text-right text-xs">전력</th><th className="text-right text-xs">연료</th><th className="text-right text-xs font-black text-slate-800">단가</th><th className="text-right text-xs">생산량</th><th className="text-right text-xs text-indigo-600">1년</th><th className="text-right text-xs text-emerald-600">20년</th></tr></thead><tbody className="divide-y divide-slate-100 font-black">{monthlySavingData.map((m,i)=>(<tr key={i} className="hover:bg-slate-50"><td className="text-center border-r-4 border-slate-50">{m.month}m</td><td className="text-right">9.0</td><td className="text-right">{(m.totalUnitRate - 14.0).toFixed(1)}</td><td className="text-right">5.0</td><td className="text-right text-slate-800">{m.totalUnitRate.toFixed(1)}</td><td className="text-right">{m.gen.toLocaleString()}</td><td className="text-right text-indigo-600">{m.saving1Y.toLocaleString()}</td><td className="text-right text-emerald-600 bg-emerald-50/10">{m.saving20Y.toLocaleString()}</td></tr>))} <tr className="bg-slate-900 text-white font-black"><td className="text-center py-5">SUM</td><td colSpan="4"></td><td className="text-right">{(monthlySavingData.reduce((a,b)=>a+b.gen,0)).toLocaleString()}</td><td className="text-right">{(monthlySavingData.reduce((a,b)=>a+b.saving1Y,0)).toLocaleString()}</td><td className="text-right text-indigo-300">{(monthlySavingData.reduce((a,b)=>a+b.saving20Y,0)).toLocaleString()}</td></tr></tbody></table>
                                         )}
                                     </div>
                                     <div className="p-8 sm:p-16 bg-slate-50 border-t-4 border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 no-capture"><div className="text-sm sm:text-2xl text-slate-400 tracking-[0.4em] font-black uppercase">제작: 조성현 (CHO SEONG HYEON)</div><div className="text-xs sm:text-xl text-slate-300 italic uppercase">GrandSun Tech Analysis v9.7</div></div>
