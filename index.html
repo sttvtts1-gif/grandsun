@@ -213,23 +213,20 @@
             return parts.map((part, i) => part.toLowerCase() === keyword.toLowerCase() ? <span key={i} className="highlight">{part}</span> : part);
         };
 
-        // --- 2. Firebase 초기화 로직 (외부 도메인에서도 연결 실패 없이 로드되도록 수정) ---
+        // --- 2. Firebase 초기화 로직 (외부 도메인에서도 멈춤 없이 로드되도록 최적화) ---
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-production-v9';
-        
-        // Gemini 환경 변수가 없을 때에도 초기화 객체가 존재하도록 빈 객체 할당
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v9-production';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         
         try {
             const config = JSON.parse(firebaseConfigStr);
-            // API Key가 있을 때만 초기화 진행
             if (config && config.apiKey) {
                 if (!firebase.apps.length) fbApp = firebase.initializeApp(config);
                 else fbApp = firebase.app();
                 fbAuth = firebase.auth();
                 fbDb = firebase.firestore();
             }
-        } catch (e) { console.warn("Cloud connection limited in this domain."); }
+        } catch (e) { }
 
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -240,9 +237,10 @@
         };
 
         const App = () => {
-            // --- 상태 정의 ---
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
+            
+            // --- 수치 상태 ---
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -256,6 +254,7 @@
             const [customPrice, setCustomPrice] = useState(220); 
             const [voltageType, setVoltageType] = useState("HighA"); 
             const [selectionType, setSelectionType] = useState("Select3"); 
+            
             const [policyDocs, setPolicyDocs] = useState([]);
             const [searchKeyword, setSearchKeyword] = useState("");
             const [selectedPolicyFile, setSelectedPolicyFile] = useState(null);
@@ -266,7 +265,7 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 3. useMemo 블록 (모든 계산 변수 포함, ReferenceError 방지) ---
+            // --- 3. useMemo 블록 (모든 계산 변수 포함) ---
             const combinedPolicyFiles = useMemo(() => {
                 const mainFiles = policyDocs.filter(doc => (doc.chunkIndex === 0 || doc.chunkIndex === undefined));
                 return mainFiles.map(main => {
@@ -387,7 +386,7 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            // --- 4. Firebase 인증 및 데이터 유지 (Rule 3 준수) ---
+            // --- 4. Firebase 인증 및 영속성 제어 (Rule 3) ---
             useEffect(() => {
                 if (!fbAuth) { isInitialLoadDone.current = true; return; }
                 const initAuth = async () => {
@@ -395,7 +394,7 @@
                         const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
                         if (token) await fbAuth.signInWithCustomToken(token);
                         else await fbAuth.signInAnonymously();
-                    } catch (e) { console.warn("Firebase bypassed."); }
+                    } catch (e) { }
                 };
                 initAuth();
                 const unsubscribe = fbAuth.onAuthStateChanged(setUser);
@@ -432,7 +431,6 @@
                 const policyCollection = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
                 const unsubscribe = policyCollection.onSnapshot((snapshot) => {
                     setPolicyDocs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                    setStatusMsg(""); 
                 }, (err) => { });
 
                 return () => unsubscribe();
@@ -464,7 +462,6 @@
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
 
-                // 외부 웹 대응: 설정 여부만 안내하고 로직 진행 시도
                 if (!fbDb || !fbAuth) { 
                     setStatusMsg("서버 설정이 필요한 기능입니다."); 
                     setTimeout(() => setStatusMsg(""), 3000);
@@ -477,7 +474,7 @@
                         const res = await fbAuth.signInAnonymously();
                         currentUser = res.user;
                         setUser(currentUser);
-                    } catch (err) { setStatusMsg("인증 실패"); return; }
+                    } catch (err) { setStatusMsg("서버 인증 실패"); return; }
                 }
 
                 const policyCollection = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
@@ -563,10 +560,34 @@
                 } catch (e) { document.body.classList.remove('capturing'); setIsCapturing(false); setStatusMsg("캡처 오류"); }
             };
 
-            // --- 6. 렌더링 ---
+            const getSummaryText = () => {
+                const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
+                let text = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n`;
+                text += `■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
+                if (loanActive) text += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanGrace}년 거치/${loanPeriod}년 상환)\n`;
+                if (mode === 'rps') { text += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n■ 월평균 매출액: ${formatToBaekmanTooltip(avgMonthlyRevenue)}\n`; } 
+                else { 
+                    const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); 
+                    text += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n■ 월평균 절감액: ${formatToBaekmanTooltip(total1Y/12)}\n`; 
+                }
+                text += `■ 투자금 회수: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
+                return text;
+            };
+
+            const copyToClipboard = () => {
+                const summary = getSummaryText();
+                const textArea = document.createElement("textarea");
+                textArea.value = summary;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                setStatusMsg("클립보드에 복사되었습니다.");
+                document.body.removeChild(textArea);
+                setTimeout(() => setStatusMsg(""), 2000);
+            };
+
             return (
                 <div className="app-shell pb-20 font-black" ref={captureRef}>
-                    {/* Header */}
                     <div className="bg-slate-900 text-white px-4 sm:px-8 py-4 flex flex-col sm:flex-row justify-between items-center no-capture shadow-lg sticky top-0 z-[100] gap-4">
                         <div className="flex items-center gap-4 sm:gap-6">
                             <img src="./1775708560922.png" alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert cursor-pointer hover:opacity-80 transition-opacity" onClick={() => window.location.reload()} />
@@ -722,7 +743,7 @@
                                 </div>
                                 <div className="glass-card p-6 sm:p-20 mb-10 overflow-hidden relative z-0">
                                     <h2 className="text-sm sm:text-5xl border-b-4 sm:border-b-10 border-indigo-500 inline-block mb-6 sm:mb-20 pb-2 sm:pb-5 uppercase tracking-tighter font-black">{mode === 'rps' ? 'Profit Forecast Graph' : 'Savings Forecast Graph'}</h2>
-                                    <div className="chart-scroll-container"><div className="chart-container-box"><ResponsiveContainer width="100%" height="100%"><AreaChart data={yearlyData} margin={{ top: 450, right: 30, left: 10, bottom: 80 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="year" tick={{...chartFontConfig, fontSize: 12, fill: '#94a3b8'}} axisLine={false} tickLine={false} tickFormatter={(v)=>v+'y'} /><YAxis tick={{...chartFontConfig, fontSize: 14, fill: '#64748b'}} axisLine={false} tickLine={false} width={100} ticks={yAxisTicks} interval={0} domain={chartYDomain} tickFormatter={(v)=>(v/100000).toFixed(0)+'억'} /><Tooltip formatter={(val) => [formatToBaekmanTooltip(val * 1000), "누적수익"]} contentStyle={{ borderRadius: '32px', border: 'none', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', fontSize: '18px' }} /><ReferenceLine y={equityWon/1000} stroke="#f43f5e" strokeWidth={2} strokeDasharray="15 15" />{paybackDetail.year !== "-" && (<ReferenceLine x={Number(paybackDetail.year)} stroke="#10b981" strokeWidth={4} strokeDasharray="10 10"><Label value={`BEP : ${paybackDetail.year}년 ${paybackDetail.month}개월 (${formatToBaekmanTooltip(equityWon)})`} position="top" fill="#10b981" offset={80} style={{...chartFontConfig, fontSize: 16}} /></ReferenceLine>)}<Area type="monotone" dataKey="cumProfit" stroke="#4f46e5" strokeWidth={8} fillOpacity={0.15} fill="#4f46e5" isAnimationActive={false} /></AreaChart></ResponsiveContainer></div></div>
+                                    <div className="chart-scroll-container"><div className="chart-container-box"><ResponsiveContainer width="100%" height="100%"><AreaChart data={yearlyData} margin={{ top: isCapturing ? 450 : 250, right: 30, left: 10, bottom: 80 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="year" tick={{...chartFontConfig, fontSize: 12, fill: '#94a3b8'}} axisLine={false} tickLine={false} tickFormatter={(v)=>v+'y'} /><YAxis tick={{...chartFontConfig, fontSize: 14, fill: '#64748b'}} axisLine={false} tickLine={false} width={100} ticks={yAxisTicks} interval={0} domain={chartYDomain} tickFormatter={(v)=>(v/100000).toFixed(0)+'억'} /><Tooltip formatter={(val) => [formatToBaekmanTooltip(val * 1000), "누적수익"]} contentStyle={{ borderRadius: '32px', border: 'none', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', fontSize: '18px' }} /><ReferenceLine y={equityWon/1000} stroke="#f43f5e" strokeWidth={2} strokeDasharray="15 15" />{paybackDetail.year !== "-" && (<ReferenceLine x={Number(paybackDetail.year)} stroke="#10b981" strokeWidth={4} strokeDasharray="10 10"><Label value={`BEP : ${paybackDetail.year}년 ${paybackDetail.month}개월 (${formatToBaekmanTooltip(equityWon)})`} position="top" fill="#10b981" offset={80} style={{...chartFontConfig, fontSize: 16}} /></ReferenceLine>)}<Area type="monotone" dataKey="cumProfit" stroke="#4f46e5" strokeWidth={8} fillOpacity={0.15} fill="#4f46e5" isAnimationActive={false} /></AreaChart></ResponsiveContainer></div></div>
                                 </div>
                                 <div className="glass-card overflow-hidden mt-10 detailed-table relative z-0">
                                     <div className="bg-slate-900 text-white px-6 sm:px-10 py-6 sm:py-8 text-sm sm:text-xl uppercase tracking-widest font-black">{mode === 'rps' ? 'Simulation Summary' : 'Simulation Saving'}</div>
@@ -763,7 +784,7 @@
                                     } else if (capturedImage) {
                                         const link = document.createElement('a'); link.href = capturedImage; link.download = "그랜드썬_리포트.jpg"; link.click();
                                     }
-                                }} className="w-full bg-blue-600 text-white py-10 rounded-[50px] text-4xl shadow-2xl hover:bg-blue-700 active:scale-95 transition-all font-black flex items-center justify-center gap-4">📲 리포트 이미지 저장/공유 (카톡발송)</button></div>
+                                }} className="w-full bg-blue-600 text-white py-10 rounded-[50px] text-4xl shadow-2xl hover:bg-blue-700 active:scale-95 transition-all font-black flex items-center justify-center gap-4">📲 리포트 이미지 저장/공유 (카톡발송) </button></div>
                             </div>
                         </div>
                     )}
