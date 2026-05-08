@@ -13,7 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK (호환성 모드) -->
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore-compat.js"></script>
@@ -53,13 +53,20 @@
 
         .detailed-table th, .detailed-table td {
             white-space: nowrap !important;
-            padding: 12px 8px !important;
+            padding: 12px 10px !important;
         }
 
-        /* --- 캡처 전용 스타일 --- */
+        /* --- 캡처 전용 스타일 (리포트 발송 시 레이아웃 고정) --- */
         .capturing .no-capture { display: none !important; }
         .capturing .no-capture-ui { display: none !important; }
-        .capturing .main-container { width: 1600px !important; max-width: 1600px !important; padding: 60px !important; }
+        
+        .capturing .main-container {
+            width: 1600px !important;
+            max-width: 1600px !important;
+            padding: 60px !important;
+            background-color: #f8fafc !important;
+        }
+
         .capturing .settings-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 24px !important; }
         .capturing .metric-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 24px !important; }
         .capturing .chart-container-box { height: 900px !important; width: 1500px !important; }
@@ -76,14 +83,17 @@
 
         .highlight { background-color: #fde68a; color: #1e293b; padding: 0 2px; border-radius: 2px; }
 
-        /* 제도변경 탭 전용 레이아웃 */
+        /* 제도변경 탭 UI 스타일 */
         .file-drop-zone {
             border: 4px dashed #cbd5e1;
             background-color: #fcfcfc;
             border-radius: 3rem;
             transition: all 0.3s;
         }
-        .file-drop-zone:hover { border-color: #4f46e5; background-color: #f5f3ff; }
+        .file-drop-zone:hover {
+            border-color: #4f46e5;
+            background-color: #f5f3ff;
+        }
         .policy-search-input {
             width: 100%;
             padding: 1.5rem 2.5rem;
@@ -95,7 +105,10 @@
             background-color: white;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
         }
-        .policy-search-input:focus { border-color: #4f46e5; box-shadow: 0 15px 35px -5px rgba(79, 70, 229, 0.15); }
+        .policy-search-input:focus {
+            border-color: #4f46e5;
+            box-shadow: 0 15px 35px -5px rgba(79, 70, 229, 0.15);
+        }
     </style>
 </head>
 <body>
@@ -105,7 +118,10 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 1. 전역 유틸리티 (컴포넌트 로드 전 선언 보장) ---
+        // --- 1. 유틸리티 및 영구 저장소 설정 (이 이름은 고정되어야 데이터가 유지됩니다) ---
+        const DB_NAME = "GrandSun_Persistent_DB"; // 고정 DB 이름
+        const SETTINGS_KEY = "grandsun_persistent_settings"; // 고정 로컬 스토리지 키
+        
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
         const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
         const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
@@ -119,9 +135,8 @@
             return parts.map((part, i) => part.toLowerCase() === keyword.toLowerCase() ? <span key={i} className="highlight">{part}</span> : part);
         };
 
-        // IndexedDB (대용량 파일 저장용)
         const dbPromise = new Promise((resolve, reject) => {
-            const request = indexedDB.open("GrandSunDB_Final", 1);
+            const request = indexedDB.open(DB_NAME, 1);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "parentId" });
@@ -132,7 +147,7 @@
 
         // --- 2. Firebase 초기화 ---
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v13-stable-prod';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v15-final';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         
         try {
@@ -182,7 +197,7 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 3. 데이터 연산 useMemo (App 최상단: capParts 등 모든 변수 보장) ---
+            // --- 3. 데이터 연산 useMemo (선언 순서 고정: ReferenceError 해결) ---
             const capacity = useMemo(() => Number(capacityInput) || 0, [capacityInput]);
             const totalInvestmentWon = constCost + kepcoCost;
             const equityWon = totalInvestmentWon - (loanActive ? loanPrincipal : 0);
@@ -287,13 +302,14 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            // --- 4. 데이터 유지 엔진 ---
+            // --- 4. 데이터 유지 로직 (고정된 키값 사용) ---
             useEffect(() => {
-                const init = async () => {
-                    const localS = localStorage.getItem('grandsun_v15_stable');
-                    if (localS) {
+                const initStore = async () => {
+                    // 수치 로드
+                    const saved = localStorage.getItem(SETTINGS_KEY);
+                    if (saved) {
                         try {
-                            const d = JSON.parse(localS);
+                            const d = JSON.parse(saved);
                             if (d.capacityInput) setCapacityInput(d.capacityInput);
                             if (d.constCost !== undefined) setConstCost(d.constCost);
                             if (d.kepcoCost !== undefined) setKepcoCost(d.kepcoCost);
@@ -310,38 +326,38 @@
                             if (d.mode) setMode(d.mode);
                         } catch(e) {}
                     }
+                    // 파일 로드 (IndexedDB)
                     const db = await dbPromise;
                     const store = db.transaction("files", "readonly").objectStore("files");
                     const lDocs = await new Promise(r => { const req = store.getAll(); req.onsuccess = () => r(req.result); });
                     if (lDocs.length > 0) setPolicyDocs(lDocs);
 
+                    // Firebase 실시간 동기화
                     if (fbAuth && fbDb) {
                         try {
                             const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
                             if (token) await fbAuth.signInWithCustomToken(token); else await fbAuth.signInAnonymously();
                             const cu = fbAuth.currentUser;
-                            if (cu) {
-                                setUser(cu);
-                                fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles').onSnapshot(s => {
-                                    if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()})));
-                                });
-                            }
+                            if (cu) setUser(cu);
+                            fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles').onSnapshot(s => {
+                                if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()})));
+                            });
                         } catch(e) { }
                     }
                     isInitialLoadDone.current = true;
                 };
-                init();
+                initStore();
             }, []);
 
             useEffect(() => {
                 if (!isInitialLoadDone.current) return;
                 const payload = { capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, lastUpdated: new Date() };
-                localStorage.setItem('grandsun_v15_stable', JSON.stringify(payload));
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
                 if (user && fbDb) {
                     const tid = setTimeout(async () => { try { await fbDb.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc('current').set(payload, { merge: true }); } catch(e) {} }, 1000);
                     return () => clearTimeout(tid);
                 }
-            }, [capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, user]);
+            }, [capacityInput, constCost, mode, voltageType, selectionType, user]);
 
             // --- 5. 핸들러 ---
             const handleConstCostChange = (e) => { const val = parseInput(e.target.value); setConstCost(val); setLoanPrincipal(Math.round(val * 0.8)); };
@@ -357,7 +373,7 @@
                     const isPdf = file.type === 'application/pdf';
                     let fData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
                     try {
-                        setStatusMsg(`${file.name} 처리 중...`);
+                        setStatusMsg(`${file.name} 분석 중...`);
                         if (isPdf) {
                             const ab = await file.arrayBuffer();
                             const pdf = await pdfjsLib.getDocument({data: ab}).promise;
@@ -374,7 +390,7 @@
                         if (col) {
                             const CHUNK = 800000; const numC = Math.ceil(dUrl.length / CHUNK);
                             for (let i = 0; i < numC; i++) { await col.add({ ...fData, chunkIndex: i, isMultipart: numC > 1, dataUrlPart: dUrl.substring(i * CHUNK, (i + 1) * CHUNK), totalChunks: numC }); }
-                            setStatusMsg(`서버 저장 완료`);
+                            setStatusMsg(`업로드 완료`);
                         } else {
                             const tx = db.transaction("files", "readwrite");
                             await tx.objectStore("files").put({ ...fData, dataUrl: dUrl });
@@ -427,7 +443,7 @@
             const getSummaryText = () => {
                 const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
                 let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
-                if (loanActive) t += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanPeriod}년 상환)\n`;
+                if (loanActive) t += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanPeriod} 상환)\n`;
                 if (mode === 'rps') { t += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n`; } 
                 else { const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n`; }
                 t += `■ BEP: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
@@ -447,7 +463,7 @@
                                 <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'policy' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('policy')}>제도변경</button>
                             </div>
                         </div>
-                        {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 active:scale-95 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
+                        {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
                     </div>
 
                     <div className="max-w-[1750px] mx-auto p-4 sm:p-6 main-container">
@@ -476,7 +492,7 @@
                                             <div className="guide-box">
                                                 <h4 className="text-base text-indigo-600 mb-4 uppercase font-black tracking-widest">STORAGE & SEARCH GUIDE</h4>
                                                 <ul className="text-sm text-slate-500 font-bold space-y-3">
-                                                    <li>• <span className="text-indigo-600">Hybrid Persistence</span>: 서버가 없어도 브라우저 대용량 DB(IndexedDB)에 보관됩니다.</li>
+                                                    <li>• <span className="text-indigo-600">Hybrid Persistence</span>: 서버가 없어도 현재 기기의 대용량 DB(IndexedDB)에 보관됩니다.</li>
                                                     <li>• <span className="text-indigo-600">Advanced Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 출력합니다.</li>
                                                 </ul>
                                             </div>
