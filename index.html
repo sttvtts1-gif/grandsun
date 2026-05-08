@@ -13,7 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDK (호환성 모드) -->
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore-compat.js"></script>
@@ -53,42 +53,20 @@
 
         .detailed-table th, .detailed-table td {
             white-space: nowrap !important;
-            padding: 14px 10px !important;
+            padding: 12px 8px !important;
         }
 
-        /* --- 캡처 전용 스타일 (리포트 발송 시 레이아웃 고정) --- */
+        /* --- 캡처 전용 스타일 --- */
         .capturing .no-capture { display: none !important; }
         .capturing .no-capture-ui { display: none !important; }
-        
-        .capturing .main-container {
-            width: 1600px !important;
-            max-width: 1600px !important;
-            padding: 60px !important;
-            background-color: #f8fafc !important;
-        }
-
-        .capturing .settings-grid {
-            display: grid !important;
-            grid-template-columns: repeat(3, 1fr) !important;
-            gap: 24px !important;
-        }
-
-        .capturing .metric-grid {
-            display: grid !important;
-            grid-template-columns: repeat(4, 1fr) !important;
-            gap: 24px !important;
-        }
-
-        .capturing .chart-container-box {
-            height: 900px !important;
-            width: 1500px !important;
-        }
-
+        .capturing .main-container { width: 1600px !important; max-width: 1600px !important; padding: 60px !important; }
+        .capturing .settings-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 24px !important; }
+        .capturing .metric-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 24px !important; }
+        .capturing .chart-container-box { height: 900px !important; width: 1500px !important; }
         .capture-row-data { display: none; }
         .capturing .capture-row-data { display: block !important; }
 
         .table-container { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        
         .chart-container-box { width: 100%; height: 650px; }
         @media (min-width: 640px) { .chart-container-box { height: 900px; } }
 
@@ -98,17 +76,14 @@
 
         .highlight { background-color: #fde68a; color: #1e293b; padding: 0 2px; border-radius: 2px; }
 
-        /* 제도변경 탭 UI 디자인 스타일 */
+        /* 제도변경 탭 전용 레이아웃 */
         .file-drop-zone {
             border: 4px dashed #cbd5e1;
             background-color: #fcfcfc;
             border-radius: 3rem;
             transition: all 0.3s;
         }
-        .file-drop-zone:hover {
-            border-color: #4f46e5;
-            background-color: #f5f3ff;
-        }
+        .file-drop-zone:hover { border-color: #4f46e5; background-color: #f5f3ff; }
         .policy-search-input {
             width: 100%;
             padding: 1.5rem 2.5rem;
@@ -120,16 +95,7 @@
             background-color: white;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
         }
-        .policy-search-input:focus {
-            border-color: #4f46e5;
-            box-shadow: 0 15px 35px -5px rgba(79, 70, 229, 0.15);
-        }
-        .guide-box {
-            background-color: #f8fafc;
-            border: 2px solid #f1f5f9;
-            border-radius: 2.5rem;
-            padding: 2rem;
-        }
+        .policy-search-input:focus { border-color: #4f46e5; box-shadow: 0 15px 35px -5px rgba(79, 70, 229, 0.15); }
     </style>
 </head>
 <body>
@@ -139,7 +105,7 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 1. 유틸리티 함수 (전역 최상단 배치: ReferenceError 원천 차단) ---
+        // --- 1. 전역 유틸리티 (컴포넌트 로드 전 선언 보장) ---
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
         const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
         const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
@@ -153,9 +119,9 @@
             return parts.map((part, i) => part.toLowerCase() === keyword.toLowerCase() ? <span key={i} className="highlight">{part}</span> : part);
         };
 
-        // IndexedDB Helper (대용량 파일 로컬 저장용)
+        // IndexedDB (대용량 파일 저장용)
         const dbPromise = new Promise((resolve, reject) => {
-            const request = indexedDB.open("GrandSunDB", 4);
+            const request = indexedDB.open("GrandSunDB_Final", 1);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "parentId" });
@@ -164,9 +130,9 @@
             request.onerror = (e) => reject(e.target.error);
         });
 
-        // --- 2. Firebase 초기화 로직 ---
+        // --- 2. Firebase 초기화 ---
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v12-final-prod';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v13-stable-prod';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         
         try {
@@ -182,16 +148,16 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         const INDUSTRIAL_RATES = {
-            "HighA": { "Select1": { summer: 152.4, springFall: 126.3, winter: 126.5 }, "Select2": { summer: 163.8, springFall: 133.4, winter: 134.0 }, "Select3": { summer: 146.3, springFall: 115.2, winter: 147.0 } },
-            "HighB": { "Select1": { summer: 161.7, springFall: 128.9, winter: 128.5 }, "Select2": { summer: 157.9, springFall: 124.9, winter: 124.5 }, "Select3": { summer: 156.2, springFall: 123.2, winter: 122.8 } },
-            "HighC": { "Select1": { summer: 161.8, springFall: 124.6, winter: 124.2 }, "Select2": { summer: 157.1, springFall: 119.9, winter: 119.5 }, "Select3": { summer: 156.0, springFall: 118.8, winter: 118.4 } }
+            "HighA": { label: "고압A", "Select1": { summer: 152.4, springFall: 126.3, winter: 126.5 }, "Select2": { summer: 163.8, springFall: 133.4, winter: 134.0 }, "Select3": { summer: 146.3, springFall: 115.2, winter: 147.0 } },
+            "HighB": { label: "고압B", "Select1": { summer: 161.7, springFall: 128.9, winter: 128.5 }, "Select2": { summer: 157.9, springFall: 124.9, winter: 124.5 }, "Select3": { summer: 156.2, springFall: 123.2, winter: 122.8 } },
+            "HighC": { label: "고압C", "Select1": { summer: 161.8, springFall: 124.6, winter: 124.2 }, "Select2": { summer: 157.1, springFall: 119.9, winter: 119.5 }, "Select3": { summer: 156.0, springFall: 118.8, winter: 118.4 } }
         };
 
         const App = () => {
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
             
-            // --- 수치 및 데이터 상태 ---
+            // --- 수치 상태 ---
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -216,7 +182,11 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 3. 데이터 연산 useMemo (App 최상단 배치: 참조 오류 원천 차단) ---
+            // --- 3. 데이터 연산 useMemo (App 최상단: capParts 등 모든 변수 보장) ---
+            const capacity = useMemo(() => Number(capacityInput) || 0, [capacityInput]);
+            const totalInvestmentWon = constCost + kepcoCost;
+            const equityWon = totalInvestmentWon - (loanActive ? loanPrincipal : 0);
+
             const capParts = useMemo(() => {
                 const val = String(capacityInput || "0");
                 const p = val.split('.');
@@ -224,16 +194,12 @@
             }, [capacityInput]);
 
             const selfRates = useMemo(() => INDUSTRIAL_RATES[voltageType][selectionType], [voltageType, selectionType]);
-            
             const selfSavingRate = useMemo(() => {
                 const avg = (selfRates.summer + selfRates.springFall + selfRates.winter) / 3;
                 return Math.round(avg * 10) / 10;
             }, [selfRates]);
 
             const currentPrice = mode === "rps" ? customPrice : selfSavingRate;
-            const capacity = useMemo(() => Number(capacityInput) || 0, [capacityInput]);
-            const totalInvestmentWon = constCost + kepcoCost;
-            const equityWon = totalInvestmentWon - (loanActive ? loanPrincipal : 0);
 
             const yearlyData = useMemo(() => {
                 let data = [];
@@ -248,7 +214,8 @@
                 for (let year = 1; year <= 30; year++) {
                     const eff = 0.99 - ((year - 1) * 0.004);
                     const angAdj = moduleAngle === 10 ? 0 : (moduleAngle < 10 ? -3.29 + (moduleAngle - 5) * 0.658 : (moduleAngle - 10) * 0.48);
-                    const annualRevenue = capacity * (baseGenTime * (1 + angAdj / 100)) * 365 * eff * currentPrice;
+                    const annualGeneration = capacity * (baseGenTime * (1 + angAdj / 100)) * 365 * eff;
+                    const annualRevenue = annualGeneration * currentPrice;
                     const opCost = baseAnnualOpCost * Math.pow(1.02, year - 1);
                     let yearlyInterest = 0; let yearlyPrincipalRepay = 0;
                     if (loanActive && year <= (loanGrace + loanPeriod)) {
@@ -262,13 +229,24 @@
                             }
                         }
                     }
-                    cumulativeRevenue += annualRevenue;
-                    cumulativeProfit += (annualRevenue - opCost - yearlyInterest);
-                    cumulativeCashFlow += (annualRevenue - opCost - yearlyInterest - yearlyPrincipalRepay);
-                    data.push({ year, revenue: Math.round(annualRevenue/1000), netCash: Math.round((annualRevenue - opCost - yearlyInterest - yearlyPrincipalRepay)/1000), cumRevenue: Math.round(cumulativeRevenue/1000), cumProfit: Math.round(cumulativeProfit/1000), cumCash: Math.round(cumulativeCashFlow/1000) });
+                    const annualNetProfit = annualRevenue - opCost - yearlyInterest;
+                    const annualCashOut = annualRevenue - opCost - (yearlyInterest + yearlyPrincipalRepay);
+                    cumulativeRevenue += annualRevenue; cumulativeProfit += annualNetProfit; cumulativeCashFlow += annualCashOut;
+                    data.push({ year, revenue: Math.round(annualRevenue/1000), opCost: Math.round(opCost/1000), loanInterest: Math.round(yearlyInterest/1000), principalRepay: Math.round(yearlyPrincipalRepay/1000), netCash: Math.round(annualCashOut/1000), cumRevenue: Math.round(cumulativeRevenue/1000), cumProfit: Math.round(cumulativeProfit/1000), cumCash: Math.round(cumulativeCashFlow/1000) });
                 }
                 return data;
             }, [mode, capacity, baseGenTime, moduleAngle, currentPrice, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod]);
+
+            const monthlySavingData = useMemo(() => {
+                const days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+                return Array.from({length: 12}, (_, i) => {
+                    const m = i + 1;
+                    const rate = (m>=6&&m<=8) ? selfRates.summer : (m===11||m===12||m===1||m===2) ? selfRates.winter : selfRates.springFall;
+                    const totalUnitRate = 9.0 + rate + 5.0;
+                    const gen = capacity * baseGenTime * days[i] * 0.99;
+                    return { month: m, climateFee: 9.0, energyCharge: rate, fuelAdj: 5.0, totalUnitRate, gen: Math.round(gen), saving1Y: Math.round(gen * totalUnitRate), saving20Y: Math.round(gen * totalUnitRate * 20) };
+                });
+            }, [capacity, baseGenTime, selfRates]);
 
             const yAxisTicks = useMemo(() => {
                 if (!yearlyData.length) return [];
@@ -309,48 +287,45 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            const monthlySavingData = useMemo(() => {
-                const days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-                return Array.from({length: 12}, (_, i) => {
-                    const m = i + 1;
-                    const rate = (m>=6&&m<=8) ? selfRates.summer : (m===11||m===12||m===1||m===2) ? selfRates.winter : selfRates.springFall;
-                    const totalUnitRate = 9.0 + rate + 5.0;
-                    const gen = capacity * baseGenTime * days[i] * 0.99;
-                    return { month: m, totalUnitRate, gen: Math.round(gen), saving1Y: Math.round(gen * totalUnitRate), saving20Y: Math.round(gen * totalUnitRate * 20) };
-                });
-            }, [capacity, baseGenTime, selfRates]);
-
-            // --- 4. 데이터 영속성 엔진 (IndexedDB 통합) ---
+            // --- 4. 데이터 유지 엔진 ---
             useEffect(() => {
                 const init = async () => {
-                    const localS = localStorage.getItem('grandsun_v12_stable');
+                    const localS = localStorage.getItem('grandsun_v15_stable');
                     if (localS) {
                         try {
                             const d = JSON.parse(localS);
                             if (d.capacityInput) setCapacityInput(d.capacityInput);
                             if (d.constCost !== undefined) setConstCost(d.constCost);
+                            if (d.kepcoCost !== undefined) setKepcoCost(d.kepcoCost);
+                            if (d.moduleAngle !== undefined) setModuleAngle(d.moduleAngle);
+                            if (d.baseGenTime !== undefined) setBaseGenTime(d.baseGenTime);
+                            if (d.loanActive !== undefined) setLoanActive(d.loanActive);
+                            if (d.loanPrincipal !== undefined) setLoanPrincipal(d.loanPrincipal);
+                            if (d.loanInterest !== undefined) setLoanInterest(d.loanInterest);
+                            if (d.loanGrace !== undefined) setLoanGrace(d.loanGrace);
+                            if (d.loanPeriod !== undefined) setLoanPeriod(d.loanPeriod);
+                            if (d.customPrice !== undefined) setCustomPrice(d.customPrice);
+                            if (d.voltageType) setVoltageType(d.voltageType);
+                            if (d.selectionType) setSelectionType(d.selectionType);
                             if (d.mode) setMode(d.mode);
                         } catch(e) {}
                     }
-
                     const db = await dbPromise;
-                    const tx = db.transaction("files", "readonly");
-                    const store = tx.objectStore("files");
-                    const localDocs = await new Promise(r => {
-                        const req = store.getAll();
-                        req.onsuccess = () => r(req.result);
-                    });
-                    if (localDocs.length > 0) setPolicyDocs(localDocs);
+                    const store = db.transaction("files", "readonly").objectStore("files");
+                    const lDocs = await new Promise(r => { const req = store.getAll(); req.onsuccess = () => r(req.result); });
+                    if (lDocs.length > 0) setPolicyDocs(lDocs);
 
                     if (fbAuth && fbDb) {
                         try {
                             const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                            if (token) await fbAuth.signInWithCustomToken(token);
-                            else await fbAuth.signInAnonymously();
+                            if (token) await fbAuth.signInWithCustomToken(token); else await fbAuth.signInAnonymously();
                             const cu = fbAuth.currentUser;
-                            if (cu) setUser(cu);
-                            const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
-                            col.onSnapshot(s => { if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()}))); });
+                            if (cu) {
+                                setUser(cu);
+                                fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles').onSnapshot(s => {
+                                    if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()})));
+                                });
+                            }
                         } catch(e) { }
                     }
                     isInitialLoadDone.current = true;
@@ -361,14 +336,12 @@
             useEffect(() => {
                 if (!isInitialLoadDone.current) return;
                 const payload = { capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, lastUpdated: new Date() };
-                localStorage.setItem('grandsun_v12_stable', JSON.stringify(payload));
+                localStorage.setItem('grandsun_v15_stable', JSON.stringify(payload));
                 if (user && fbDb) {
-                    const tid = setTimeout(async () => {
-                        try { await fbDb.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc('current').set(payload, { merge: true }); } catch(e) {}
-                    }, 1000);
+                    const tid = setTimeout(async () => { try { await fbDb.collection('artifacts').doc(appId).collection('users').doc(user.uid).collection('settings').doc('current').set(payload, { merge: true }); } catch(e) {} }, 1000);
                     return () => clearTimeout(tid);
                 }
-            }, [capacityInput, constCost, mode, user]);
+            }, [capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, user]);
 
             // --- 5. 핸들러 ---
             const handleConstCostChange = (e) => { const val = parseInput(e.target.value); setConstCost(val); setLoanPrincipal(Math.round(val * 0.8)); };
@@ -378,15 +351,13 @@
             const handlePolicyFileUpload = async (e) => {
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
-                
                 const db = await dbPromise;
                 const col = fbDb ? fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles') : null;
-
                 for (const file of files) {
                     const isPdf = file.type === 'application/pdf';
                     let fData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
                     try {
-                        setStatusMsg(`${file.name} 분석 중...`);
+                        setStatusMsg(`${file.name} 처리 중...`);
                         if (isPdf) {
                             const ab = await file.arrayBuffer();
                             const pdf = await pdfjsLib.getDocument({data: ab}).promise;
@@ -395,24 +366,21 @@
                                 const p = await pdf.getPage(i);
                                 const tc = await p.getTextContent();
                                 const pt = tc.items.map(it => it.str).join(" ");
-                                fullT += ` [Page ${i}] ` + pt;
-                                pData.push({ page: i, text: pt });
+                                fullT += ` [Page ${i}] ` + pt; pData.push({ page: i, text: pt });
                             }
                             fData.content = fullT.substring(0, 500000); fData.pages = JSON.stringify(pData);
                         }
                         const dUrl = await new Promise(r => { const rd = new FileReader(); rd.onload = ev => r(ev.target.result); rd.readAsDataURL(file); });
-                        
                         if (col) {
                             const CHUNK = 800000; const numC = Math.ceil(dUrl.length / CHUNK);
-                            for (let i = 0; i < numC; i++) {
-                                await col.add({ ...fData, chunkIndex: i, isMultipart: numC > 1, dataUrlPart: dUrl.substring(i * CHUNK, (i + 1) * CHUNK), totalChunks: numC });
-                            }
+                            for (let i = 0; i < numC; i++) { await col.add({ ...fData, chunkIndex: i, isMultipart: numC > 1, dataUrlPart: dUrl.substring(i * CHUNK, (i + 1) * CHUNK), totalChunks: numC }); }
+                            setStatusMsg(`서버 저장 완료`);
                         } else {
                             const tx = db.transaction("files", "readwrite");
                             await tx.objectStore("files").put({ ...fData, dataUrl: dUrl });
                             setPolicyDocs(prev => [...prev, { ...fData, dataUrl: dUrl }]);
+                            setStatusMsg(`로컬 저장 완료`);
                         }
-                        setStatusMsg(`완료: ${file.name}`);
                     } catch (err) { setStatusMsg("저장 실패"); }
                 }
                 setTimeout(() => setStatusMsg(""), 2000);
@@ -421,38 +389,27 @@
             const handleDeletePolicyFile = async (parentId) => {
                 setPolicyDocs(prev => prev.filter(doc => doc.parentId !== parentId));
                 const db = await dbPromise;
-                const tx = db.transaction("files", "readwrite");
-                await tx.objectStore("files").delete(parentId);
-
+                await db.transaction("files", "readwrite").objectStore("files").delete(parentId);
                 if (user && fbDb) {
                     const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
-                    const snap = await col.where('parentId', '==', parentId).get();
-                    const batch = fbDb.batch();
-                    snap.forEach(d => batch.delete(d.ref));
-                    await batch.commit();
+                    col.where('parentId', '==', parentId).get().then(s => { const batch = fbDb.batch(); s.forEach(d => batch.delete(d.ref)); batch.commit(); });
                 }
-                setStatusMsg("삭제 완료");
-                setTimeout(() => setStatusMsg(""), 2000);
+                setStatusMsg("삭제 완료"); setTimeout(() => setStatusMsg(""), 2000);
             };
 
             const handleViewFile = (file) => {
                 try {
                     if (file.type.startsWith('application/pdf') || file.type.startsWith('image/')) {
-                        const base64Data = file.dataUrl.split(',')[1];
-                        const byteCharacters = atob(base64Data);
+                        const base64Parts = file.dataUrl.split(',');
+                        const byteCharacters = atob(base64Parts[1]);
                         const byteNumbers = new Array(byteCharacters.length);
                         for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
                         const blob = new Blob([new Uint8Array(byteNumbers)], {type: file.type});
                         const blobUrl = URL.createObjectURL(blob);
-                        
-                        const link = document.createElement('a');
-                        link.href = blobUrl;
-                        link.target = '_blank';
-                        link.click();
+                        window.open(blobUrl, '_blank');
                     } else { setSelectedPolicyFile(file); }
                 } catch (e) {
-                    const w = window.open();
-                    if (w) { w.document.write(`<iframe src="${file.dataUrl}" frameborder="0" style="border:0; width:100%; height:100%;" allowfullscreen></iframe>`); w.document.title = file.name; }
+                    const w = window.open(); if (w) { w.document.write(`<iframe src="${file.dataUrl}" frameborder="0" style="border:0; width:100%; height:100%;" allowfullscreen></iframe>`); w.document.title = file.name; }
                 }
             };
 
@@ -479,6 +436,7 @@
 
             return (
                 <div className="app-shell pb-20 font-black" ref={captureRef}>
+                    {/* Header */}
                     <div className="bg-slate-900 text-white px-4 sm:px-8 py-4 flex flex-col sm:flex-row justify-between items-center no-capture shadow-lg sticky top-0 z-[100] gap-4">
                         <div className="flex items-center gap-4 sm:gap-6">
                             <img src="./1775708560922.png" alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert cursor-pointer" onClick={() => window.location.reload()} />
@@ -518,8 +476,8 @@
                                             <div className="guide-box">
                                                 <h4 className="text-base text-indigo-600 mb-4 uppercase font-black tracking-widest">STORAGE & SEARCH GUIDE</h4>
                                                 <ul className="text-sm text-slate-500 font-bold space-y-3">
-                                                    <li>• <span className="text-indigo-600">Local DB Storage</span>: IndexedDB 기술로 대용량 PDF도 끊김 없이 보관됩니다.</li>
-                                                    <li>• <span className="text-indigo-600">Advanced Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 위치를 추적합니다.</li>
+                                                    <li>• <span className="text-indigo-600">Hybrid Persistence</span>: 서버가 없어도 브라우저 대용량 DB(IndexedDB)에 보관됩니다.</li>
+                                                    <li>• <span className="text-indigo-600">Advanced Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 출력합니다.</li>
                                                 </ul>
                                             </div>
                                         </div>
@@ -527,7 +485,7 @@
                                 </div>
                                 <div className="glass-card overflow-hidden">
                                     <div className="bg-slate-900 text-white px-10 py-10 flex justify-between items-center">
-                                        <span className="text-2xl font-black uppercase tracking-widest flex items-center gap-4"><div className="w-4 h-10 bg-emerald-500 rounded-full"></div>Document List</span>
+                                        <span className="text-2xl font-black uppercase tracking-widest flex items-center gap-4"><div className="w-4 h-10 bg-emerald-500 rounded-full"></div>Shared Document List</span>
                                         <span className="bg-emerald-600/30 text-emerald-300 px-6 py-2 rounded-2xl text-base font-black border border-emerald-500/30">{filteredPolicyFiles.length} DOCUMENTS LOADED</span>
                                     </div>
                                     <div className="table-container">
@@ -578,12 +536,27 @@
                                         <div className="space-y-4 flex-1">
                                             <div className="flex justify-between items-center bg-slate-50 p-4 sm:p-5 rounded-2xl"><label className="text-[10px] sm:text-[11px] font-black text-indigo-600 flex-shrink-0 mr-4">공사비 (원)</label><div className="flex-1 flex justify-end"><input type="text" value={formatInput(constCost)} onChange={handleConstCostChange} className="no-capture-ui bg-transparent text-right font-black text-base sm:text-lg text-indigo-600 outline-none w-full" /><div className="capture-row-data text-indigo-600">{formatInput(constCost)}원</div></div></div>
                                             <div className="flex justify-between items-center bg-slate-50 p-4 sm:p-5 rounded-2xl"><label className="text-[10px] sm:text-[11px] font-black text-indigo-600 flex-shrink-0 mr-4">한전분담금 (원)</label><div className="flex-1 flex justify-end"><input type="text" value={formatInput(kepcoCost)} onChange={(e)=>setKepcoCost(parseInput(e.target.value))} className="no-capture-ui bg-transparent text-right font-black text-base sm:text-lg text-indigo-600 outline-none w-full" /><div className="capture-row-data text-indigo-600">{formatInput(kepcoCost)}원</div></div></div>
-                                            <div className="flex justify-between items-center bg-slate-50 p-4 sm:p-5 rounded-2xl"><label className="text-[10px] sm:text-[11px] font-black text-indigo-600 flex-shrink-0 mr-4">투자비 합계 (원)</label><div className="text-base sm:text-lg font-black text-indigo-600 text-right flex-1 pr-1">{formatInput(constCost+kepcoCost)}원</div></div></div>
+                                            <div className="flex justify-between items-center bg-slate-50 p-4 sm:p-5 rounded-2xl"><label className="text-[10px] sm:text-[11px] font-black text-indigo-600 flex-shrink-0 mr-4">투자비 합계 (원)</label><div className="text-base sm:text-lg font-black text-indigo-600 text-right flex-1 pr-1">{formatInput(constCost+kepcoCost)}원</div></div>
+                                        </div>
                                     </div>
                                     <div className="glass-card flex flex-col stats-box p-6 sm:p-8">
                                         <h3 className="text-slate-400 text-xs sm:text-sm border-l-8 border-emerald-500 pl-4 font-black mb-6">{mode === 'rps' ? '수익 변수 실시간 조절' : '전력 요금제 선택'}</h3>
                                         {mode === 'self' && (
                                             <div className="mb-6 space-y-4 no-capture">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div className="flex flex-col">
+                                                        <label className="text-[9px] text-slate-400 mb-1 ml-1">계약종별</label>
+                                                        <select value={voltageType} onChange={(e) => setVoltageType(e.target.value)} className="bg-slate-50 p-3 rounded-xl font-black text-xs outline-none border-0 appearance-none shadow-sm">
+                                                            <option value="HighA">고압A</option><option value="HighB">고압B</option><option value="HighC">고압C</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <label className="text-[9px] text-slate-400 mb-1 ml-1">선택요금</label>
+                                                        <select value={selectionType} onChange={(e) => setSelectionType(e.target.value)} className="bg-slate-50 p-3 rounded-xl font-black text-xs outline-none border-0 appearance-none shadow-sm">
+                                                            <option value="Select1">선택 I</option><option value="Select2">선택 II</option><option value="Select3">선택 III</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
                                                 <div className="bg-slate-900 rounded-2xl p-4 text-white">
                                                     <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-700">
                                                         <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Seasonal Rates (원/kWh) - 중간부하 기준</span>
@@ -596,7 +569,7 @@
                                                 </div>
                                             </div>
                                         )}
-                                        <div className="grid grid-cols-4 gap-2 mb-8">{[{l:'용량(kW)',v:capacity.toFixed(3),k:'cap',c:'text-indigo-600'},{l:mode==='rps'?'단가(원)':'평균단가',v:currentPrice,k:'price',c:'text-orange-600'},{l:'각도(°)',v:moduleAngle,k:'ang',c:'text-slate-700'},{l:'시간(h)',v:baseGenTime,k:'time',c:'text-slate-700'}].map((item,i)=>(<div key={i} className="bg-slate-50 p-1 rounded-2xl h-32 sm:h-48 flex flex-col items-center justify-center border border-slate-100 relative"><label className="text-[8px] sm:text-[10px] text-slate-400 mb-1 sm:mb-3 font-black">{item.l}</label>{item.k==='cap'?(<div className="capacity-ui-box w-full h-full"><input type="text" value={capacityInput} onChange={handleCapacityChange} className="no-capture-ui capacity-input-native" /><div className="capacity-visual-layer flex items-baseline justify-center font-black no-capture-ui"><span className="text-indigo-600 text-lg sm:text-2xl leading-none">{capParts.int}</span>{capParts.dec && <span className="text-indigo-400 text-[10px] sm:text-xs ml-0.5">{capParts.dec}</span>}</div><div className="capture-row-data text-indigo-600 text-lg sm:text-2xl font-black">{capacity.toFixed(3)}</div></div>):(item.k==='price'&&mode==='rps'?(<div className="w-full text-center"><input type="text" value={customPrice} onChange={(e)=>setCustomPrice(parseInput(e.target.value))} className="no-capture-ui w-full bg-transparent text-center font-black text-orange-600 text-lg sm:text-2xl outline-none" /><div className="capture-row-data text-orange-600 text-lg sm:text-2xl font-black">{customPrice}</div></div>):(<span className={`text-lg sm:text-2xl font-black ${item.c}`}>{item.v}</span>))}</div>))}</div>
+                                        <div className="grid grid-cols-4 gap-2 mb-8">{[{l:'용량(kW)',v:capacity.toFixed(3),k:'cap',c:'text-indigo-600'},{l:mode==='rps'?'단가(원)':'평균단가',v:currentPrice,k:'price',c:'text-orange-600'},{l:'각도(°)',v:moduleAngle,k:'ang',c:'text-slate-700'},{l:'시간(h)',v:baseGenTime,k:'time',c:'text-slate-700'}].map((item,i)=>(<div key={i} className="bg-slate-50 p-1 rounded-2xl h-32 sm:h-48 flex flex-col items-center justify-center border border-slate-100 relative"><label className="text-[8px] sm:text-[10px] text-slate-400 mb-1 sm:mb-3 font-black">{item.l}</label>{item.k==='cap'?(<div className="capacity-ui-box w-full h-full"><input type="text" value={capacityInput} onChange={handleCapacityChange} className="no-capture-ui capacity-input-native text-indigo-600 text-center text-lg sm:text-2xl font-black w-full h-full bg-transparent outline-none relative z-50" /><div className="capture-row-data text-indigo-600 text-lg sm:text-2xl font-black">{capacity.toFixed(3)}</div></div>):(item.k==='price'&&mode==='rps'?(<div className="w-full text-center"><input type="text" value={customPrice} onChange={(e)=>setCustomPrice(parseInput(e.target.value))} className="no-capture-ui w-full bg-transparent text-center font-black text-orange-600 text-lg sm:text-2xl outline-none" /><div className="capture-row-data text-orange-600 text-lg sm:text-2xl font-black">{customPrice}</div></div>):(<span className={`text-lg sm:text-2xl font-black ${item.c}`}>{item.v}</span>))}</div>))}</div>
                                         <div className="space-y-4 sm:space-y-6 no-capture px-2 sm:px-3"><div className="flex justify-between text-[10px] sm:text-xs font-black uppercase"><span>Angle</span><span className="text-indigo-600 font-black">{moduleAngle}°</span></div><input type="range" min="5" max="15" value={moduleAngle} onPointerDown={blurActiveInput} onChange={(e)=>setModuleAngle(Number(e.target.value))} /><div className="flex justify-between text-[10px] sm:text-xs font-black uppercase"><span>Sunshine</span><span className="text-indigo-600 font-black">{baseGenTime}h</span></div><input type="range" min="3.0" max="4.5" step="0.1" value={baseGenTime} onPointerDown={blurActiveInput} onChange={(e)=>setBaseGenTime(Number(e.target.value))} /></div>
                                     </div>
                                     <div className="glass-card flex flex-col p-6 sm:p-8"><div className="flex justify-between items-center mb-6 no-capture"><h3 className="text-slate-400 text-xs sm:text-sm border-l-8 border-amber-500 pl-4 font-black">금융 조건 설정</h3><input type="checkbox" checked={loanActive} onChange={(e)=>setLoanActive(e.target.checked)} className="w-6 h-6 sm:w-8 sm:h-8 accent-amber-500 cursor-pointer" /></div>
@@ -619,14 +592,52 @@
                                     <div className="bg-slate-900 text-white px-6 sm:px-10 py-6 sm:py-8 text-sm sm:text-xl uppercase tracking-widest font-black">{mode === 'rps' ? 'Simulation Summary' : 'Simulation Saving'}</div>
                                     <div className="table-container">
                                         <table className="w-full text-left">
-                                            <thead className="bg-slate-50 text-slate-400 font-black border-b-2 border-slate-100 uppercase tracking-wider text-sm">
-                                                <tr><th className="p-4 text-center">{mode==='rps'?'년차':'월'}</th><th className="p-4 text-right">단가/매출</th><th className="p-4 text-right text-indigo-600">누적/절감</th></tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100 font-black">
+                                            <thead className="bg-slate-50 text-slate-400 font-black border-b-4 border-slate-100 uppercase tracking-wider text-xs">
                                                 {mode === 'rps' ? (
-                                                    yearlyData.map((r,i)=>(<tr key={i} className="hover:bg-slate-50"><td className="p-4 text-center">{r.year}y</td><td className="p-4 text-right">{formatToBaekmanTooltip(r.revenue*1000)}</td><td className="p-4 text-right text-indigo-600">{formatToBaekmanTooltip(r.cumProfit*1000)}</td></tr>))
+                                                    <tr><th className="p-4 text-center">년차</th><th className="p-4 text-right">매출액</th><th className="p-4 text-right text-rose-400">유지비</th><th className="p-4 text-right text-amber-500">이자</th><th className="p-4 text-right text-amber-700">원금</th><th className="p-4 text-right">누적매출</th><th className="p-4 text-right text-indigo-600">누적순익</th></tr>
                                                 ) : (
-                                                    monthlySavingData.map((m,i)=>(<tr key={i} className="hover:bg-slate-50"><td className="p-4 text-center">{m.month}월</td><td className="p-4 text-right">{m.totalUnitRate.toFixed(1)}</td><td className="p-4 text-right text-indigo-600">{m.saving1Y.toLocaleString()}</td></tr>))
+                                                    <tr className="bg-slate-100 text-slate-600">
+                                                        <th className="p-4 text-center border-r">구분</th>
+                                                        <th className="p-4 text-center border-r">2026년</th>
+                                                        <th className="p-4 text-right border-r">① 기후환경요금 (원/kWh)</th>
+                                                        <th className="p-4 text-right border-r">② 전력량요금 (원/kWh)</th>
+                                                        <th className="p-4 text-right border-r">③ 연료비조정 요금(원/kWh)</th>
+                                                        <th className="p-4 text-right border-r bg-indigo-50">①+②+③ 합계</th>
+                                                        <th className="p-4 text-right border-r">전력생산량 (월/kWh)</th>
+                                                        <th className="p-4 text-right border-r text-indigo-600">1년 절감비용(원)</th>
+                                                        <th className="p-4 text-right text-emerald-600 bg-emerald-50">20년 절감비용(원)</th>
+                                                    </tr>
+                                                )}
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 font-black text-sm">
+                                                {mode === 'rps' ? (
+                                                    yearlyData.map((r,i)=>(<tr key={i} className="hover:bg-slate-50"><td className="p-4 text-center">{r.year}y</td><td className="p-4 text-right">{formatToBaekmanTooltip(r.revenue*1000)}</td><td className="p-4 text-right text-rose-400/80">{formatToBaekmanTooltip(r.opCost*1000)}</td><td className="p-4 text-right text-amber-500/80">{formatToBaekmanTooltip(r.loanInterest*1000)}</td><td className="p-4 text-right text-amber-700/80">{formatToBaekmanTooltip(r.principalRepay*1000)}</td><td className="p-4 text-right">{formatToBaekmanTooltip(r.cumRevenue*1000)}</td><td className="p-4 text-right text-indigo-600">{formatToBaekmanTooltip(r.cumProfit*1000)}</td></tr>))
+                                                ) : (
+                                                    monthlySavingData.map((m,i)=>(
+                                                        <tr key={i} className="hover:bg-slate-50">
+                                                            {i === 0 && <td rowSpan="12" className="p-4 text-center bg-slate-50 border-r border-b font-bold"><div className="rotate-0 lg:rotate-[-90deg] whitespace-nowrap">{INDUSTRIAL_RATES[voltageType].label} {selectionType.replace('Select', '선택')}</div></td>}
+                                                            <td className="p-4 text-center border-r font-bold">{m.month}월</td>
+                                                            <td className="p-4 text-right border-r">{m.climateFee.toFixed(1)}</td>
+                                                            <td className="p-4 text-right border-r">{m.energyCharge.toFixed(1)}</td>
+                                                            <td className="p-4 text-right border-r">{m.fuelAdj.toFixed(1)}</td>
+                                                            <td className="p-4 text-right border-r bg-indigo-50/50 font-bold">{m.totalUnitRate.toFixed(1)}</td>
+                                                            <td className="p-4 text-right border-r">{m.gen.toLocaleString()}</td>
+                                                            <td className="p-4 text-right border-r text-indigo-600">{(m.saving1Y).toLocaleString()}</td>
+                                                            <td className="p-4 text-right text-emerald-600 bg-emerald-50/50">{(m.saving20Y).toLocaleString()}</td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                                {mode === 'self' && (
+                                                    <tr className="bg-slate-900 text-white font-black">
+                                                        <td colSpan="2" className="p-5 text-center">합 계 / 평균</td>
+                                                        <td className="p-4 text-right">9.0</td>
+                                                        <td className="p-4 text-right">{(monthlySavingData.reduce((a,b)=>a+b.energyCharge,0)/12).toFixed(1)}</td>
+                                                        <td className="p-4 text-right">5.0</td>
+                                                        <td className="p-4 text-right text-indigo-300">{(monthlySavingData.reduce((a,b)=>a+b.totalUnitRate,0)/12).toFixed(1)}</td>
+                                                        <td className="p-4 text-right">{(monthlySavingData.reduce((a,b)=>a+b.gen,0)).toLocaleString()}</td>
+                                                        <td className="p-4 text-right text-indigo-300">{(monthlySavingData.reduce((a,b)=>a+b.saving1Y,0)).toLocaleString()}</td>
+                                                        <td className="p-4 text-right text-emerald-300">{(monthlySavingData.reduce((a,b)=>a+b.saving20Y,0)).toLocaleString()}</td>
+                                                    </tr>
                                                 )}
                                             </tbody>
                                         </table>
