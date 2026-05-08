@@ -124,8 +124,8 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 데이터 고정용 전역 설정 (로직이 바뀌어도 데이터는 유지됨) ---
-        const DB_NAME = "GrandSun_Permanent_Storage";
+        // --- 영구 데이터 고정 설정 ---
+        const DB_NAME = "GrandSun_Permanent_Device_DB";
         const SETTINGS_KEY = "grandsun_permanent_v1";
 
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
@@ -142,7 +142,7 @@
         };
 
         const dbPromise = new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, 1);
+            const request = indexedDB.open(DB_NAME, 2);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "parentId" });
@@ -153,7 +153,7 @@
 
         // --- 2. Firebase 초기화 ---
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v15-permanent';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-production-v15';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         
         try {
@@ -178,6 +178,7 @@
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
             
+            // --- 수치 및 데이터 상태 ---
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -202,7 +203,7 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 3. 데이터 연산 useMemo (선언 순서 고정: ReferenceError 해결) ---
+            // --- 3. 데이터 연산 useMemo (App 최상단 고정: ReferenceError 해결) ---
             const capParts = useMemo(() => {
                 const val = String(capacityInput || "0");
                 const p = val.split('.');
@@ -270,6 +271,12 @@
                 return [0, isCapturing ? maxDataVal + 550000 : 'auto'];
             }, [isCapturing, yearlyData]);
 
+            const paybackDetail = useMemo(() => {
+                const target = equityWon / 1000; const idx = yearlyData.findIndex(d => d.cumCash >= target); if (idx === -1) return { year: "-", month: "-" };
+                const prevCumCash = idx > 0 ? yearlyData[idx - 1].cumCash : 0; const remaining = target - prevCumCash; const curYearCash = yearlyData[idx].netCash;
+                let months = curYearCash > 0 ? Math.ceil((remaining / curYearCash) * 12) : 12; let finalYear = idx; let finalMonth = months; if (finalMonth >= 12) { finalYear += 1; finalMonth = 0; } return { year: finalYear, month: finalMonth };
+            }, [yearlyData, equityWon]);
+
             const monthlySavingData = useMemo(() => {
                 const days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
                 return Array.from({length: 12}, (_, i) => {
@@ -279,12 +286,6 @@
                     return { month: m, climateFee: 9.0, energyCharge: rate, fuelAdj: 5.0, totalUnitRate: 9.0 + rate + 5.0, gen: Math.round(gen), saving1Y: Math.round(gen * (9.0 + rate + 5.0)), saving20Y: Math.round(gen * (9.0 + rate + 5.0) * 20) };
                 });
             }, [capacity, baseGenTime, selfRates]);
-
-            const paybackDetail = useMemo(() => {
-                const target = equityWon / 1000; const idx = yearlyData.findIndex(d => d.cumCash >= target); if (idx === -1) return { year: "-", month: "-" };
-                const prevCumCash = idx > 0 ? yearlyData[idx - 1].cumCash : 0; const remaining = target - prevCumCash; const curYearCash = yearlyData[idx].netCash;
-                let months = curYearCash > 0 ? Math.ceil((remaining / curYearCash) * 12) : 12; let finalYear = idx; let finalMonth = months; if (finalMonth >= 12) { finalYear += 1; finalMonth = 0; } return { year: finalYear, month: finalMonth };
-            }, [yearlyData, equityWon]);
 
             const combinedPolicyFiles = useMemo(() => {
                 const mainFiles = policyDocs.filter(doc => (doc.chunkIndex === 0 || doc.chunkIndex === undefined));
@@ -305,19 +306,19 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            // --- 4. 영구 데이터 로드 및 감시 ---
+            // --- 4. 데이터 유지 엔진 (Rule 3) ---
             useEffect(() => {
-                const initStore = async () => {
+                const init = async () => {
                     // 수치 로드
-                    const saved = localStorage.getItem(SETTINGS_KEY);
-                    if (saved) {
+                    const localS = localStorage.getItem(SETTINGS_KEY);
+                    if (localS) {
                         try {
-                            const d = JSON.parse(saved);
+                            const d = JSON.parse(localS);
                             if (d.capacityInput) setCapacityInput(d.capacityInput);
                             if (d.constCost !== undefined) setConstCost(d.constCost);
                             if (d.kepcoCost !== undefined) setKepcoCost(d.kepcoCost);
-                            if (d.baseGenTime !== undefined) setBaseGenTime(d.baseGenTime);
                             if (d.moduleAngle !== undefined) setModuleAngle(d.moduleAngle);
+                            if (d.baseGenTime !== undefined) setBaseGenTime(d.baseGenTime);
                             if (d.loanActive !== undefined) setLoanActive(d.loanActive);
                             if (d.loanPrincipal !== undefined) setLoanPrincipal(d.loanPrincipal);
                             if (d.loanInterest !== undefined) setLoanInterest(d.loanInterest);
@@ -332,7 +333,10 @@
                     // 파일 로드 (IndexedDB)
                     const db = await dbPromise;
                     const store = db.transaction("files", "readonly").objectStore("files");
-                    const lDocs = await new Promise(r => { const req = store.getAll(); req.onsuccess = () => r(req.result); });
+                    const lDocs = await new Promise(r => {
+                        const req = store.getAll();
+                        req.onsuccess = () => r(req.result);
+                    });
                     if (lDocs.length > 0) setPolicyDocs(lDocs);
 
                     if (fbAuth && fbDb) {
@@ -347,9 +351,10 @@
                     }
                     isInitialLoadDone.current = true;
                 };
-                initStore();
+                init();
             }, []);
 
+            // 수치 저장 (파일 데이터 제외 - 용량 초과 방지)
             useEffect(() => {
                 if (!isInitialLoadDone.current) return;
                 const payload = { capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, lastUpdated: new Date() };
@@ -374,7 +379,7 @@
                     const isPdf = file.type === 'application/pdf';
                     let fData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
                     try {
-                        setStatusMsg(`${file.name} 분석 중...`);
+                        setStatusMsg(`${file.name} 처리 중...`);
                         if (isPdf) {
                             const ab = await file.arrayBuffer();
                             const pdf = await pdfjsLib.getDocument({data: ab}).promise;
@@ -416,8 +421,8 @@
             const handleViewFile = (file) => {
                 try {
                     if (file.type.startsWith('application/pdf') || file.type.startsWith('image/')) {
-                        const base64Parts = file.dataUrl.split(',');
-                        const byteCharacters = atob(base64Parts[1]);
+                        const base64Data = file.dataUrl.split(',')[1];
+                        const byteCharacters = atob(base64Data);
                         const byteNumbers = new Array(byteCharacters.length);
                         for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
                         const blob = new Blob([new Uint8Array(byteNumbers)], {type: file.type});
@@ -430,7 +435,7 @@
             };
 
             const handleCapture = async () => {
-                setStatusMsg("보고서 발송용 이미지 생성 중...");
+                setStatusMsg("보고서 이미지 생성 중...");
                 try {
                     document.body.classList.add('capturing'); setIsCapturing(true); await new Promise(r => setTimeout(r, 4000));
                     const can = await html2canvas(captureRef.current, { useCORS: true, backgroundColor: "#f8fafc", scale: 2, scrollX: 0, scrollY: -window.scrollY, windowWidth: 1600 });
@@ -440,9 +445,18 @@
                 } catch (e) { document.body.classList.remove('capturing'); setIsCapturing(false); setStatusMsg("캡처 오류"); }
             };
 
+            const getSummaryText = () => {
+                const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
+                let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
+                if (loanActive) t += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanPeriod} 상환)\n`;
+                if (mode === 'rps') { t += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n`; } 
+                else { const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n`; }
+                t += `■ BEP: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
+                return t;
+            };
+
             return (
                 <div className="app-shell pb-20 font-black" ref={captureRef}>
-                    {/* Header */}
                     <div className="bg-slate-900 text-white px-4 sm:px-8 py-4 flex flex-col sm:flex-row justify-between items-center no-capture shadow-lg sticky top-0 z-[100] gap-4">
                         <div className="flex items-center gap-4 sm:gap-6">
                             <img src="./1775708560922.png" alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert cursor-pointer" onClick={() => window.location.reload()} />
@@ -453,7 +467,7 @@
                                 <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'policy' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('policy')}>제도변경</button>
                             </div>
                         </div>
-                        {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 active:scale-95 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
+                        {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
                     </div>
 
                     <div className="max-w-[1750px] mx-auto p-4 sm:p-6 main-container">
@@ -468,7 +482,7 @@
                                                 <div className="flex flex-col items-center justify-center p-10 text-center">
                                                     <div className="bg-indigo-100 p-8 rounded-full mb-6 text-indigo-600"><svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg></div>
                                                     <p className="mb-2 text-3xl font-black">파일 업로드하기</p>
-                                                    <p className="text-base text-slate-400 font-bold">PDF, 이미지 문서를 보관 및 조회 가능합니다. (3MB+ 지원)</p>
+                                                    <p className="text-base text-slate-400 font-bold">PDF, 이미지 문서를 보관 및 조회 가능합니다. (3MB+ 가능)</p>
                                                 </div>
                                                 <input type="file" className="hidden" multiple onChange={handlePolicyFileUpload} />
                                             </label>
@@ -482,8 +496,8 @@
                                             <div className="guide-box">
                                                 <h4 className="text-base text-indigo-600 mb-4 uppercase font-black tracking-widest">STORAGE & SEARCH GUIDE</h4>
                                                 <ul className="text-sm text-slate-500 font-bold space-y-3">
-                                                    <li>• <span className="text-indigo-600">Per-Device Storage</span>: 각 기기의 대용량 DB에 본인이 원하는 문서를 저장하고 관리하세요.</li>
-                                                    <li>• <span className="text-indigo-600">Advanced Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 출력합니다.</li>
+                                                    <li>• <span className="text-indigo-600">Per-Device Storage</span>: 각 기기별 DB에 본인이 원하는 문서를 저장하고 관리하세요.</li>
+                                                    <li>• <span className="text-indigo-600">Deep Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 출력합니다.</li>
                                                 </ul>
                                             </div>
                                         </div>
