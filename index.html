@@ -53,20 +53,13 @@
 
         .detailed-table th, .detailed-table td {
             white-space: nowrap !important;
-            padding: 12px 10px !important;
+            padding: 10px 6px !important;
         }
 
-        /* --- 캡처 전용 스타일 (리포트 발송 시 레이아웃 고정) --- */
+        /* --- 캡처 전용 스타일 --- */
         .capturing .no-capture { display: none !important; }
         .capturing .no-capture-ui { display: none !important; }
-        
-        .capturing .main-container {
-            width: 1600px !important;
-            max-width: 1600px !important;
-            padding: 60px !important;
-            background-color: #f8fafc !important;
-        }
-
+        .capturing .main-container { width: 1600px !important; max-width: 1600px !important; padding: 60px !important; }
         .capturing .settings-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 24px !important; }
         .capturing .metric-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 24px !important; }
         .capturing .chart-container-box { height: 900px !important; width: 1500px !important; }
@@ -83,17 +76,14 @@
 
         .highlight { background-color: #fde68a; color: #1e293b; padding: 0 2px; border-radius: 2px; }
 
-        /* 제도변경 탭 UI 디자인 복구 스타일 */
+        /* 제도변경 UI */
         .file-drop-zone {
             border: 4px dashed #cbd5e1;
             background-color: #fcfcfc;
             border-radius: 3rem;
             transition: all 0.3s;
         }
-        .file-drop-zone:hover {
-            border-color: #4f46e5;
-            background-color: #f5f3ff;
-        }
+        .file-drop-zone:hover { border-color: #4f46e5; background-color: #f5f3ff; }
         .policy-search-input {
             width: 100%;
             padding: 1.5rem 2.5rem;
@@ -105,16 +95,6 @@
             background-color: white;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
         }
-        .policy-search-input:focus {
-            border-color: #4f46e5;
-            box-shadow: 0 15px 35px -5px rgba(79, 70, 229, 0.15);
-        }
-        .guide-box {
-            background-color: #f8fafc;
-            border: 2px solid #f1f5f9;
-            border-radius: 2.5rem;
-            padding: 2rem;
-        }
     </style>
 </head>
 <body>
@@ -124,10 +104,10 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 영구 데이터 고정 설정 ---
-        const DB_NAME = "GrandSun_Permanent_Device_DB";
-        const SETTINGS_KEY = "grandsun_permanent_v1";
-
+        // --- 데이터 고정용 전역 상단 설정 (초기화 방지) ---
+        const DB_NAME = "GrandSun_Permanent_Device_DB_v2";
+        const SETTINGS_KEY = "grandsun_device_settings_v2";
+        
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
         const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
         const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
@@ -142,7 +122,7 @@
         };
 
         const dbPromise = new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, 2);
+            const request = indexedDB.open(DB_NAME, 1);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "parentId" });
@@ -151,11 +131,10 @@
             request.onerror = (e) => reject(e.target.error);
         });
 
-        // --- 2. Firebase 초기화 ---
+        // Firebase 초기화 (배포 대응)
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-production-v15';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-production-v16';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-        
         try {
             const config = JSON.parse(firebaseConfigStr);
             if (config && config.apiKey) {
@@ -178,7 +157,7 @@
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
             
-            // --- 수치 및 데이터 상태 ---
+            // 수치 상태
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -203,7 +182,7 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 3. 데이터 연산 useMemo (App 최상단 고정: ReferenceError 해결) ---
+            // --- 데이터 연산 useMemo (App 최상단 고정: ReferenceError 해결) ---
             const capParts = useMemo(() => {
                 const val = String(capacityInput || "0");
                 const p = val.split('.');
@@ -306,14 +285,13 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            // --- 4. 데이터 유지 엔진 (Rule 3) ---
+            // --- 4. 영구 보존 엔진 로드 및 저장 ---
             useEffect(() => {
-                const init = async () => {
-                    // 수치 로드
-                    const localS = localStorage.getItem(SETTINGS_KEY);
-                    if (localS) {
+                const load = async () => {
+                    const savedSettings = localStorage.getItem(SETTINGS_KEY);
+                    if (savedSettings) {
                         try {
-                            const d = JSON.parse(localS);
+                            const d = JSON.parse(savedSettings);
                             if (d.capacityInput) setCapacityInput(d.capacityInput);
                             if (d.constCost !== undefined) setConstCost(d.constCost);
                             if (d.kepcoCost !== undefined) setKepcoCost(d.kepcoCost);
@@ -330,14 +308,10 @@
                             if (d.mode) setMode(d.mode);
                         } catch(e) {}
                     }
-                    // 파일 로드 (IndexedDB)
                     const db = await dbPromise;
                     const store = db.transaction("files", "readonly").objectStore("files");
-                    const lDocs = await new Promise(r => {
-                        const req = store.getAll();
-                        req.onsuccess = () => r(req.result);
-                    });
-                    if (lDocs.length > 0) setPolicyDocs(lDocs);
+                    const localFiles = await new Promise(r => { const req = store.getAll(); req.onsuccess = () => r(req.result); });
+                    if (localFiles.length > 0) setPolicyDocs(localFiles);
 
                     if (fbAuth && fbDb) {
                         try {
@@ -351,10 +325,9 @@
                     }
                     isInitialLoadDone.current = true;
                 };
-                init();
+                load();
             }, []);
 
-            // 수치 저장 (파일 데이터 제외 - 용량 초과 방지)
             useEffect(() => {
                 if (!isInitialLoadDone.current) return;
                 const payload = { capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, lastUpdated: new Date() };
@@ -379,7 +352,7 @@
                     const isPdf = file.type === 'application/pdf';
                     let fData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
                     try {
-                        setStatusMsg(`${file.name} 처리 중...`);
+                        setStatusMsg(`${file.name} 분석 중...`);
                         if (isPdf) {
                             const ab = await file.arrayBuffer();
                             const pdf = await pdfjsLib.getDocument({data: ab}).promise;
@@ -421,8 +394,8 @@
             const handleViewFile = (file) => {
                 try {
                     if (file.type.startsWith('application/pdf') || file.type.startsWith('image/')) {
-                        const base64Data = file.dataUrl.split(',')[1];
-                        const byteCharacters = atob(base64Data);
+                        const base64Parts = file.dataUrl.split(',');
+                        const byteCharacters = atob(base64Parts[1]);
                         const byteNumbers = new Array(byteCharacters.length);
                         for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
                         const blob = new Blob([new Uint8Array(byteNumbers)], {type: file.type});
@@ -435,7 +408,7 @@
             };
 
             const handleCapture = async () => {
-                setStatusMsg("보고서 이미지 생성 중...");
+                setStatusMsg("이미지 생성 중...");
                 try {
                     document.body.classList.add('capturing'); setIsCapturing(true); await new Promise(r => setTimeout(r, 4000));
                     const can = await html2canvas(captureRef.current, { useCORS: true, backgroundColor: "#f8fafc", scale: 2, scrollX: 0, scrollY: -window.scrollY, windowWidth: 1600 });
@@ -467,7 +440,7 @@
                                 <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'policy' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('policy')}>제도변경</button>
                             </div>
                         </div>
-                        {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
+                        {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 active:scale-95 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
                     </div>
 
                     <div className="max-w-[1750px] mx-auto p-4 sm:p-6 main-container">
@@ -482,7 +455,7 @@
                                                 <div className="flex flex-col items-center justify-center p-10 text-center">
                                                     <div className="bg-indigo-100 p-8 rounded-full mb-6 text-indigo-600"><svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg></div>
                                                     <p className="mb-2 text-3xl font-black">파일 업로드하기</p>
-                                                    <p className="text-base text-slate-400 font-bold">PDF, 이미지 문서를 보관 및 조회 가능합니다. (3MB+ 가능)</p>
+                                                    <p className="text-base text-slate-400 font-bold">본인 기기에 문서를 보관 및 조회 가능합니다. (3MB+ 가능)</p>
                                                 </div>
                                                 <input type="file" className="hidden" multiple onChange={handlePolicyFileUpload} />
                                             </label>
@@ -496,7 +469,7 @@
                                             <div className="guide-box">
                                                 <h4 className="text-base text-indigo-600 mb-4 uppercase font-black tracking-widest">STORAGE & SEARCH GUIDE</h4>
                                                 <ul className="text-sm text-slate-500 font-bold space-y-3">
-                                                    <li>• <span className="text-indigo-600">Per-Device Storage</span>: 각 기기별 DB에 본인이 원하는 문서를 저장하고 관리하세요.</li>
+                                                    <li>• <span className="text-indigo-600">Private DB</span>: 기기별 내부 저장소를 사용하므로 새로고침해도 파일이 유지됩니다.</li>
                                                     <li>• <span className="text-indigo-600">Deep Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 출력합니다.</li>
                                                 </ul>
                                             </div>
@@ -589,7 +562,7 @@
                                                 </div>
                                             </div>
                                         )}
-                                        <div className="grid grid-cols-4 gap-2 mb-8">{[{l:'용량(kW)',v:capacity.toFixed(3),k:'cap',c:'text-indigo-600'},{l:mode==='rps'?'단가(원)':'평균단가',v:currentPrice,k:'price',c:'text-orange-600'},{l:'각도(°)',v:moduleAngle,k:'ang',c:'text-slate-700'},{l:'시간(h)',v:baseGenTime,k:'time',c:'text-slate-700'}].map((item,i)=>(<div key={i} className="bg-slate-50 p-1 rounded-2xl h-32 sm:h-48 flex flex-col items-center justify-center border border-slate-100 relative"><label className="text-[8px] sm:text-[10px] text-slate-400 mb-1 sm:mb-3 font-black">{item.l}</label>{item.k==='cap'?(<div className="capacity-ui-box w-full h-full"><input type="text" value={capacityInput} onChange={handleCapacityChange} className="no-capture-ui capacity-input-native text-indigo-600 text-center text-lg sm:text-2xl font-black w-full h-full bg-transparent outline-none relative z-50" /><div className="capture-row-data text-indigo-600 text-lg sm:text-2xl font-black">{capacity.toFixed(3)}</div></div>):(item.k==='price'&&mode==='rps'?(<div className="w-full text-center"><input type="text" value={customPrice} onChange={(e)=>setCustomPrice(parseInput(e.target.value))} className="no-capture-ui w-full bg-transparent text-center font-black text-orange-600 text-lg sm:text-2xl outline-none" /><div className="capture-row-data text-orange-600 text-lg sm:text-2xl font-black">{customPrice}</div></div>):(<span className={`text-lg sm:text-2xl font-black ${item.c}`}>{item.v}</span>))}</div>))}</div>
+                                        <div className="grid grid-cols-4 gap-2 mb-8">{[{l:'용량(kW)',v:capacity.toFixed(3),k:'cap',c:'text-indigo-600'},{l:mode==='rps'?'단가(원)':'평균단가',v:currentPrice,k:'price',c:'text-orange-600'},{l:'각도(°)',v:moduleAngle,k:'ang',c:'text-slate-700'},{l:'시간(h)',v:baseGenTime,k:'time',c:'text-slate-700'}].map((item,i)=>(<div key={i} className="bg-slate-50 p-1 rounded-2xl h-32 sm:h-48 flex flex-col items-center justify-center border border-slate-100 relative"><label className="text-[8px] sm:text-[10px] text-slate-400 mb-1 sm:mb-3 font-black">{item.l}</label>{item.k==='cap'?(<div className="capacity-ui-box w-full h-full relative"><input type="text" value={capacityInput} onChange={handleCapacityChange} className="no-capture-ui absolute inset-0 text-indigo-600 text-center text-lg sm:text-2xl font-black w-full h-full bg-transparent outline-none z-50" /><div className="capture-row-data text-indigo-600 text-lg sm:text-2xl font-black">{capacity.toFixed(3)}</div></div>):(item.k==='price'&&mode==='rps'?(<div className="w-full text-center"><input type="text" value={customPrice} onChange={(e)=>setCustomPrice(parseInput(e.target.value))} className="no-capture-ui w-full bg-transparent text-center font-black text-orange-600 text-lg sm:text-2xl outline-none" /><div className="capture-row-data text-orange-600 text-lg sm:text-2xl font-black">{customPrice}</div></div>):(<span className={`text-lg sm:text-2xl font-black ${item.c}`}>{item.v}</span>))}</div>))}</div>
                                         <div className="space-y-4 sm:space-y-6 no-capture px-2 sm:px-3"><div className="flex justify-between text-[10px] sm:text-xs font-black uppercase"><span>Angle</span><span className="text-indigo-600 font-black">{moduleAngle}°</span></div><input type="range" min="5" max="15" value={moduleAngle} onPointerDown={blurActiveInput} onChange={(e)=>setModuleAngle(Number(e.target.value))} /><div className="flex justify-between text-[10px] sm:text-xs font-black uppercase"><span>Sunshine</span><span className="text-indigo-600 font-black">{baseGenTime}h</span></div><input type="range" min="3.0" max="4.5" step="0.1" value={baseGenTime} onPointerDown={blurActiveInput} onChange={(e)=>setBaseGenTime(Number(e.target.value))} /></div>
                                     </div>
                                     <div className="glass-card flex flex-col p-6 sm:p-8"><div className="flex justify-between items-center mb-6 no-capture"><h3 className="text-slate-400 text-xs sm:text-sm border-l-8 border-amber-500 pl-4 font-black">금융 조건 설정</h3><input type="checkbox" checked={loanActive} onChange={(e)=>setLoanActive(e.target.checked)} className="w-6 h-6 sm:w-8 sm:h-8 accent-amber-500 cursor-pointer" /></div>
@@ -617,15 +590,15 @@
                                                     <tr><th className="p-4 text-center">년차</th><th className="p-4 text-right">매출액</th><th className="p-4 text-right text-rose-400">유지비</th><th className="p-4 text-right text-amber-500">이자</th><th className="p-4 text-right text-amber-700">원금</th><th className="p-4 text-right">누적매출</th><th className="p-4 text-right text-indigo-600">누적순익</th></tr>
                                                 ) : (
                                                     <tr className="bg-slate-100 text-slate-600">
-                                                        <th className="p-4 text-center border-r">구분</th>
-                                                        <th className="p-4 text-center border-r">2026년</th>
-                                                        <th className="p-4 text-right border-r">① 기후환경요금 (원/kWh)</th>
-                                                        <th className="p-4 text-right border-r">② 전력량요금 (원/kWh)</th>
-                                                        <th className="p-4 text-right border-r">③ 연료비조정 요금(원/kWh)</th>
-                                                        <th className="p-4 text-right border-r bg-indigo-50">①+②+③ 합계</th>
-                                                        <th className="p-4 text-right border-r">전력생산량 (월/kWh)</th>
-                                                        <th className="p-4 text-right border-r text-indigo-600">1년 절감비용(원)</th>
-                                                        <th className="p-4 text-right text-emerald-600 bg-emerald-50">20년 절감비용(원)</th>
+                                                        <th className="p-4 text-center border-r font-bold">구분</th>
+                                                        <th className="p-4 text-center border-r font-bold">2026년</th>
+                                                        <th className="p-4 text-right border-r font-bold">① 기후환경요금 (원/kWh)</th>
+                                                        <th className="p-4 text-right border-r font-bold">② 전력량요금 (원/kWh)</th>
+                                                        <th className="p-4 text-right border-r font-bold">③ 연료비조정 요금(원/kWh)</th>
+                                                        <th className="p-4 text-right border-r bg-indigo-50 font-bold">①+②+③ 합계</th>
+                                                        <th className="p-4 text-right border-r font-bold">전력생산량 (월/kWh)</th>
+                                                        <th className="p-4 text-right border-r text-indigo-600 font-bold">1년 절감비용(원)</th>
+                                                        <th className="p-4 text-right text-emerald-600 bg-emerald-50 font-bold">20년 절감비용(원)</th>
                                                     </tr>
                                                 )}
                                             </thead>
@@ -637,13 +610,13 @@
                                                         <tr key={i} className="hover:bg-slate-50">
                                                             {i === 0 && <td rowSpan="12" className="p-4 text-center bg-slate-50 border-r border-b font-bold"><div className="rotate-0 lg:rotate-[-90deg] whitespace-nowrap">{INDUSTRIAL_RATES[voltageType].label} {selectionType.replace('Select', '선택')}</div></td>}
                                                             <td className="p-4 text-center border-r font-bold">{m.month}월</td>
-                                                            <td className="p-4 text-right border-r">{m.climateFee.toFixed(1)}</td>
+                                                            <td className="p-4 text-right border-r">9.0</td>
                                                             <td className="p-4 text-right border-r">{m.energyCharge.toFixed(1)}</td>
-                                                            <td className="p-4 text-right border-r">{m.fuelAdj.toFixed(1)}</td>
-                                                            <td className="p-4 text-right border-r bg-indigo-50/50 font-bold">{m.totalUnitRate.toFixed(1)}</td>
+                                                            <td className="p-4 text-right border-r">5.0</td>
+                                                            <td className="p-4 text-right border-r bg-indigo-50 font-bold">{m.totalUnitRate.toFixed(1)}</td>
                                                             <td className="p-4 text-right border-r">{m.gen.toLocaleString()}</td>
                                                             <td className="p-4 text-right border-r text-indigo-600">{(m.saving1Y).toLocaleString()}</td>
-                                                            <td className="p-4 text-right text-emerald-600 bg-emerald-50/50">{(m.saving20Y).toLocaleString()}</td>
+                                                            <td className="p-4 text-right text-emerald-600 bg-emerald-50">{(m.saving20Y).toLocaleString()}</td>
                                                         </tr>
                                                     ))
                                                 )}
