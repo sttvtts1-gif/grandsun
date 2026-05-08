@@ -345,7 +345,6 @@
                             const cu = fbAuth.currentUser;
                             if (cu) {
                                 setUser(cu);
-                                const doc = await fbDb.collection('artifacts').doc(appId).collection('users').doc(cu.uid).collection('settings').doc('current').get();
                             }
                             const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
                             col.onSnapshot(s => { if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()}))); });
@@ -412,10 +411,10 @@
             };
 
             const handleDeletePolicyFile = (parentId) => {
-                // 1. 로컬 상태 즉시 삭제 (어떤 환경에서든 작동)
+                // 1. 로컬 상태 즉시 삭제 (모든 환경에서 작동)
                 setPolicyDocs(prev => prev.filter(doc => doc.parentId !== parentId));
                 
-                // 2. 서버 연결된 경우 서버에서도 삭제
+                // 2. 서버 연결된 경우 서버 데이터 삭제 시도
                 if (user && fbDb) {
                     const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
                     col.where('parentId', '==', parentId).get().then(s => {
@@ -429,10 +428,29 @@
             };
 
             const handleViewFile = (file) => {
-                if (file.type.startsWith('application/pdf') || file.type.startsWith('image/')) {
+                try {
+                    // 테블릿/모바일 호환성을 위한 Blob URL 변환 로직
+                    if (file.type.startsWith('application/pdf') || file.type.startsWith('image/')) {
+                        const base64Data = file.dataUrl.split(',')[1];
+                        const byteCharacters = atob(base64Data);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                            byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        const blob = new Blob([byteArray], {type: file.type});
+                        const blobUrl = URL.createObjectURL(blob);
+                        
+                        // 새 창으로 열기 (테블릿의 네이티브 뷰어 활용)
+                        window.open(blobUrl, '_blank');
+                    } else {
+                        setSelectedPolicyFile(file);
+                    }
+                } catch (e) {
+                    // 폴백 로직
                     const w = window.open();
                     if (w) { w.document.write(`<iframe src="${file.dataUrl}" frameborder="0" style="border:0; width:100%; height:100%;" allowfullscreen></iframe>`); w.document.title = file.name; }
-                } else { setSelectedPolicyFile(file); }
+                }
             };
 
             const handleCapture = async () => {
@@ -444,6 +462,16 @@
                     document.body.classList.remove('capturing'); setIsCapturing(false);
                     setTimeout(() => setShowModal(true), 100);
                 } catch (e) { document.body.classList.remove('capturing'); setIsCapturing(false); setStatusMsg("캡처 오류"); }
+            };
+
+            const getSummaryText = () => {
+                const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
+                let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
+                if (loanActive) t += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanPeriod}년 상환)\n`;
+                if (mode === 'rps') { t += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n`; } 
+                else { const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n`; }
+                t += `■ BEP: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
+                return t;
             };
 
             return (
@@ -489,8 +517,7 @@
                                                 <h4 className="text-base text-indigo-600 mb-4 uppercase font-black tracking-widest">STORAGE & SEARCH GUIDE</h4>
                                                 <ul className="text-sm text-slate-500 font-bold space-y-3">
                                                     <li>• <span className="text-indigo-600">Cross Domain Ready</span>: GitHub Pages 등 어떤 배포 환경에서도 파일 업로드가 즉시 작동합니다.</li>
-                                                    <li>• <span className="text-indigo-600">Smart Persistence</span>: 입력한 숫자는 브라우저에 자동 기억됩니다.</li>
-                                                    <li>• <span className="text-indigo-600">Search</span>: 검색 시 문서 내부의 모든 발견 위치(페이지)를 함께 보여줍니다.</li>
+                                                    <li>• <span className="text-indigo-600">Deep Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 추적합니다.</li>
                                                 </ul>
                                             </div>
                                         </div>
