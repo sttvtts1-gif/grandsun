@@ -83,7 +83,7 @@
 
         .highlight { background-color: #fde68a; color: #1e293b; padding: 0 2px; border-radius: 2px; }
 
-        /* 제도변경 탭 UI 스타일 */
+        /* 제도변경 탭 UI 디자인 복구 스타일 */
         .file-drop-zone {
             border: 4px dashed #cbd5e1;
             background-color: #fcfcfc;
@@ -109,6 +109,12 @@
             border-color: #4f46e5;
             box-shadow: 0 15px 35px -5px rgba(79, 70, 229, 0.15);
         }
+        .guide-box {
+            background-color: #f8fafc;
+            border: 2px solid #f1f5f9;
+            border-radius: 2.5rem;
+            padding: 2rem;
+        }
     </style>
 </head>
 <body>
@@ -118,10 +124,10 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 1. 유틸리티 및 영구 저장소 설정 (이 이름은 고정되어야 데이터가 유지됩니다) ---
-        const DB_NAME = "GrandSun_Persistent_DB"; // 고정 DB 이름
-        const SETTINGS_KEY = "grandsun_persistent_settings"; // 고정 로컬 스토리지 키
-        
+        // --- 데이터 고정용 전역 설정 (로직이 바뀌어도 데이터는 유지됨) ---
+        const DB_NAME = "GrandSun_Permanent_Storage";
+        const SETTINGS_KEY = "grandsun_permanent_v1";
+
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
         const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
         const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
@@ -147,7 +153,7 @@
 
         // --- 2. Firebase 초기화 ---
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v15-final';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v15-permanent';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         
         try {
@@ -172,7 +178,6 @@
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
             
-            // --- 수치 상태 ---
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -198,10 +203,6 @@
             const isInitialLoadDone = useRef(false);
 
             // --- 3. 데이터 연산 useMemo (선언 순서 고정: ReferenceError 해결) ---
-            const capacity = useMemo(() => Number(capacityInput) || 0, [capacityInput]);
-            const totalInvestmentWon = constCost + kepcoCost;
-            const equityWon = totalInvestmentWon - (loanActive ? loanPrincipal : 0);
-
             const capParts = useMemo(() => {
                 const val = String(capacityInput || "0");
                 const p = val.split('.');
@@ -215,6 +216,9 @@
             }, [selfRates]);
 
             const currentPrice = mode === "rps" ? customPrice : selfSavingRate;
+            const capacity = useMemo(() => Number(capacityInput) || 0, [capacityInput]);
+            const totalInvestmentWon = constCost + kepcoCost;
+            const equityWon = totalInvestmentWon - (loanActive ? loanPrincipal : 0);
 
             const yearlyData = useMemo(() => {
                 let data = [];
@@ -252,17 +256,6 @@
                 return data;
             }, [mode, capacity, baseGenTime, moduleAngle, currentPrice, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod]);
 
-            const monthlySavingData = useMemo(() => {
-                const days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-                return Array.from({length: 12}, (_, i) => {
-                    const m = i + 1;
-                    const rate = (m>=6&&m<=8) ? selfRates.summer : (m===11||m===12||m===1||m===2) ? selfRates.winter : selfRates.springFall;
-                    const totalUnitRate = 9.0 + rate + 5.0;
-                    const gen = capacity * baseGenTime * days[i] * 0.99;
-                    return { month: m, climateFee: 9.0, energyCharge: rate, fuelAdj: 5.0, totalUnitRate, gen: Math.round(gen), saving1Y: Math.round(gen * totalUnitRate), saving20Y: Math.round(gen * totalUnitRate * 20) };
-                });
-            }, [capacity, baseGenTime, selfRates]);
-
             const yAxisTicks = useMemo(() => {
                 if (!yearlyData.length) return [];
                 const maxVal = Math.max(yearlyData[29].cumRevenue, 1000000); 
@@ -276,6 +269,16 @@
                 const maxDataVal = Math.max(...yearlyData.map(d => d.cumRevenue)); 
                 return [0, isCapturing ? maxDataVal + 550000 : 'auto'];
             }, [isCapturing, yearlyData]);
+
+            const monthlySavingData = useMemo(() => {
+                const days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+                return Array.from({length: 12}, (_, i) => {
+                    const m = i + 1;
+                    const rate = (m>=6&&m<=8) ? selfRates.summer : (m===11||m===12||m===1||m===2) ? selfRates.winter : selfRates.springFall;
+                    const gen = capacity * baseGenTime * days[i] * 0.99;
+                    return { month: m, climateFee: 9.0, energyCharge: rate, fuelAdj: 5.0, totalUnitRate: 9.0 + rate + 5.0, gen: Math.round(gen), saving1Y: Math.round(gen * (9.0 + rate + 5.0)), saving20Y: Math.round(gen * (9.0 + rate + 5.0) * 20) };
+                });
+            }, [capacity, baseGenTime, selfRates]);
 
             const paybackDetail = useMemo(() => {
                 const target = equityWon / 1000; const idx = yearlyData.findIndex(d => d.cumCash >= target); if (idx === -1) return { year: "-", month: "-" };
@@ -302,7 +305,7 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            // --- 4. 데이터 유지 로직 (고정된 키값 사용) ---
+            // --- 4. 영구 데이터 로드 및 감시 ---
             useEffect(() => {
                 const initStore = async () => {
                     // 수치 로드
@@ -313,8 +316,8 @@
                             if (d.capacityInput) setCapacityInput(d.capacityInput);
                             if (d.constCost !== undefined) setConstCost(d.constCost);
                             if (d.kepcoCost !== undefined) setKepcoCost(d.kepcoCost);
-                            if (d.moduleAngle !== undefined) setModuleAngle(d.moduleAngle);
                             if (d.baseGenTime !== undefined) setBaseGenTime(d.baseGenTime);
+                            if (d.moduleAngle !== undefined) setModuleAngle(d.moduleAngle);
                             if (d.loanActive !== undefined) setLoanActive(d.loanActive);
                             if (d.loanPrincipal !== undefined) setLoanPrincipal(d.loanPrincipal);
                             if (d.loanInterest !== undefined) setLoanInterest(d.loanInterest);
@@ -332,13 +335,11 @@
                     const lDocs = await new Promise(r => { const req = store.getAll(); req.onsuccess = () => r(req.result); });
                     if (lDocs.length > 0) setPolicyDocs(lDocs);
 
-                    // Firebase 실시간 동기화
                     if (fbAuth && fbDb) {
                         try {
                             const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
                             if (token) await fbAuth.signInWithCustomToken(token); else await fbAuth.signInAnonymously();
-                            const cu = fbAuth.currentUser;
-                            if (cu) setUser(cu);
+                            const cu = fbAuth.currentUser; if (cu) setUser(cu);
                             fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles').onSnapshot(s => {
                                 if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()})));
                             });
@@ -390,13 +391,12 @@
                         if (col) {
                             const CHUNK = 800000; const numC = Math.ceil(dUrl.length / CHUNK);
                             for (let i = 0; i < numC; i++) { await col.add({ ...fData, chunkIndex: i, isMultipart: numC > 1, dataUrlPart: dUrl.substring(i * CHUNK, (i + 1) * CHUNK), totalChunks: numC }); }
-                            setStatusMsg(`업로드 완료`);
                         } else {
                             const tx = db.transaction("files", "readwrite");
                             await tx.objectStore("files").put({ ...fData, dataUrl: dUrl });
                             setPolicyDocs(prev => [...prev, { ...fData, dataUrl: dUrl }]);
-                            setStatusMsg(`로컬 저장 완료`);
                         }
+                        setStatusMsg(`저장 완료`);
                     } catch (err) { setStatusMsg("저장 실패"); }
                 }
                 setTimeout(() => setStatusMsg(""), 2000);
@@ -440,16 +440,6 @@
                 } catch (e) { document.body.classList.remove('capturing'); setIsCapturing(false); setStatusMsg("캡처 오류"); }
             };
 
-            const getSummaryText = () => {
-                const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
-                let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
-                if (loanActive) t += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanPeriod} 상환)\n`;
-                if (mode === 'rps') { t += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n`; } 
-                else { const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n`; }
-                t += `■ BEP: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
-                return t;
-            };
-
             return (
                 <div className="app-shell pb-20 font-black" ref={captureRef}>
                     {/* Header */}
@@ -463,7 +453,7 @@
                                 <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'policy' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('policy')}>제도변경</button>
                             </div>
                         </div>
-                        {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
+                        {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 active:scale-95 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
                     </div>
 
                     <div className="max-w-[1750px] mx-auto p-4 sm:p-6 main-container">
@@ -492,7 +482,7 @@
                                             <div className="guide-box">
                                                 <h4 className="text-base text-indigo-600 mb-4 uppercase font-black tracking-widest">STORAGE & SEARCH GUIDE</h4>
                                                 <ul className="text-sm text-slate-500 font-bold space-y-3">
-                                                    <li>• <span className="text-indigo-600">Hybrid Persistence</span>: 서버가 없어도 현재 기기의 대용량 DB(IndexedDB)에 보관됩니다.</li>
+                                                    <li>• <span className="text-indigo-600">Per-Device Storage</span>: 각 기기의 대용량 DB에 본인이 원하는 문서를 저장하고 관리하세요.</li>
                                                     <li>• <span className="text-indigo-600">Advanced Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 출력합니다.</li>
                                                 </ul>
                                             </div>
