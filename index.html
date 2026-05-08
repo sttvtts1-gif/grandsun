@@ -56,7 +56,7 @@
             padding: 14px 10px !important;
         }
 
-        /* --- 캡처 전용 스타일 --- */
+        /* --- 캡처 전용 스타일 (리포트 발송 시 레이아웃 고정) --- */
         .capturing .no-capture { display: none !important; }
         .capturing .no-capture-ui { display: none !important; }
         
@@ -98,11 +98,11 @@
 
         .highlight { background-color: #fde68a; color: #1e293b; padding: 0 2px; border-radius: 2px; }
 
-        /* 제도변경 복구 스타일 */
+        /* 제도변경 탭 - 요청하신 이전 UI 디자인 복구 */
         .file-drop-zone {
             border: 3px dashed #cbd5e1;
             background-color: #fcfcfc;
-            border-radius: 2rem;
+            border-radius: 2.5rem;
             transition: all 0.3s;
         }
         .file-drop-zone:hover {
@@ -117,10 +117,17 @@
             font-size: 1.25rem;
             outline: none;
             transition: all 0.3s;
+            background-color: white;
         }
         .policy-search-input:focus {
             border-color: #4f46e5;
             box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.1);
+        }
+        .guide-box {
+            background-color: #f8fafc;
+            border: 1px solid #f1f5f9;
+            border-radius: 2rem;
+            padding: 1.5rem;
         }
     </style>
 </head>
@@ -131,7 +138,7 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 1. 유틸리티 함수 (전역 정의: ReferenceError 방지) ---
+        // --- 1. 유틸리티 함수 (전역 스코프 정의: ReferenceError 방지) ---
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
         const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
         const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
@@ -145,9 +152,9 @@
             return parts.map((part, i) => part.toLowerCase() === keyword.toLowerCase() ? <span key={i} className="highlight">{part}</span> : part);
         };
 
-        // --- 2. Firebase 설정 (배포 도메인 호환 무정지 로직) ---
+        // --- 2. Firebase 초기화 및 도메인 대응 엔진 ---
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v9-production-stable';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-production-v10';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
         
         try {
@@ -158,7 +165,7 @@
                 fbAuth = firebase.auth();
                 fbDb = firebase.firestore();
             }
-        } catch (e) { }
+        } catch (e) { console.warn("Firebase not active. Data will be saved locally."); }
 
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -172,7 +179,7 @@
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
             
-            // --- 수치 상태 ---
+            // --- 수치 및 데이터 상태 ---
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -187,7 +194,6 @@
             const [voltageType, setVoltageType] = useState("HighA"); 
             const [selectionType, setSelectionType] = useState("Select3"); 
             
-            // --- 데이터 상태 ---
             const [policyDocs, setPolicyDocs] = useState([]);
             const [searchKeyword, setSearchKeyword] = useState("");
             const [selectedPolicyFile, setSelectedPolicyFile] = useState(null);
@@ -198,7 +204,7 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 3. useMemo 로직 (상단 정의) ---
+            // --- 3. useMemo 블록 (모든 변수 정의 상단 배치) ---
             const combinedPolicyFiles = useMemo(() => {
                 const mainFiles = policyDocs.filter(doc => (doc.chunkIndex === 0 || doc.chunkIndex === undefined));
                 return mainFiles.map(main => {
@@ -252,7 +258,7 @@
                     if (loanActive && year <= (loanGrace + loanPeriod)) {
                         for (let m = 1; m <= 12; m++) {
                             const curM = (year - 1) * 12 + m;
-                            if (curM <= gMonths) { yearlyInterest += (currentLoanBalance * mRate); }
+                            if (curM <= gMonths) yearlyInterest += (currentLoanBalance * mRate);
                             else if (curM <= (gMonths + rMonths)) {
                                 const interestPart = currentLoanBalance * mRate; const principalPart = mInstallment - interestPart;
                                 yearlyInterest += interestPart; yearlyPrincipalRepay += principalPart;
@@ -305,9 +311,10 @@
                 });
             }, [capacity, baseGenTime, selfRates]);
 
-            // --- 4. 데이터 영속성 (서버 연결 없이 로컬 기억 우선) ---
+            // --- 4. 데이터 영속성 (LocalStorage + Firebase 하이브리드) ---
             useEffect(() => {
                 const load = async () => {
+                    // 기기간 공유를 위해 LocalStorage를 우선적으로 로드하고 유지
                     const localData = localStorage.getItem('grandsun_v9_stable_v2');
                     if (localData) {
                         try {
@@ -336,13 +343,10 @@
                             if (token) await fbAuth.signInWithCustomToken(token);
                             else await fbAuth.signInAnonymously();
                             const cu = fbAuth.currentUser;
-                            if (cu) {
-                                setUser(cu);
-                                const doc = await fbDb.collection('artifacts').doc(appId).collection('users').doc(cu.uid).collection('settings').doc('current').get();
-                            }
+                            if (cu) setUser(cu);
                             const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
                             col.onSnapshot(s => { if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()}))); });
-                        } catch(e) {}
+                        } catch(e) { }
                     }
                     isInitialLoadDone.current = true;
                 };
@@ -361,7 +365,7 @@
                 }
             }, [capacityInput, constCost, kepcoCost, baseGenTime, moduleAngle, loanActive, loanPrincipal, loanInterest, loanGrace, loanPeriod, customPrice, voltageType, selectionType, mode, user, policyDocs]);
 
-            // --- 5. 핸들러 ---
+            // --- 5. 이벤트 핸들러 ---
             const handleConstCostChange = (e) => { const val = parseInput(e.target.value); setConstCost(val); setLoanPrincipal(Math.round(val * 0.8)); };
             const handleCapacityChange = (e) => { const val = e.target.value; if (/^\d*\.?\d{0,3}$/.test(val)) setCapacityInput(val); };
             const blurActiveInput = () => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); };
@@ -369,9 +373,7 @@
             const handlePolicyFileUpload = async (e) => {
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
-
                 const col = fbDb ? fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles') : null;
-                
                 for (const file of files) {
                     const isPdf = file.type === 'application/pdf';
                     let fData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
@@ -390,9 +392,7 @@
                             }
                             fData.content = fullT.substring(0, 500000); fData.pages = JSON.stringify(pData);
                         } else { fData.content = "(문서 파일)"; }
-                        
                         const dUrl = await new Promise(r => { const rd = new FileReader(); rd.onload = ev => r(ev.target.result); rd.readAsDataURL(file); });
-                        
                         if (col) {
                             const CHUNK = 800000; const numC = Math.ceil(dUrl.length / CHUNK);
                             for (let i = 0; i < numC; i++) {
@@ -400,7 +400,6 @@
                             }
                             setStatusMsg(`서버 저장 완료: ${file.name}`);
                         } else {
-                            // 로컬 세션 저장
                             setPolicyDocs(prev => [...prev, { ...fData, dataUrl: dUrl }]);
                             setStatusMsg(`로컬 저장 완료: ${file.name}`);
                         }
@@ -427,18 +426,16 @@
                 } catch (e) { document.body.classList.remove('capturing'); setIsCapturing(false); setStatusMsg("캡처 오류"); }
             };
 
-            // --- 6. 렌더링 ---
             return (
                 <div className="app-shell pb-20 font-black" ref={captureRef}>
-                    {/* Header */}
                     <div className="bg-slate-900 text-white px-4 sm:px-8 py-4 flex flex-col sm:flex-row justify-between items-center no-capture shadow-lg sticky top-0 z-[100] gap-4">
                         <div className="flex items-center gap-4 sm:gap-6">
                             <img src="./1775708560922.png" alt="Logo" className="h-8 sm:h-10 w-auto brightness-0 invert cursor-pointer" onClick={() => window.location.reload()} />
                             <div className="h-6 sm:h-8 w-[2px] bg-slate-700"></div>
                             <div className="flex bg-slate-800 p-1 rounded-xl">
-                                <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'rps' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('rps')}>RPS</button>
-                                <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'self' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('self')}>자가소비</button>
-                                <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'policy' ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('policy')}>제도변경</button>
+                                <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'rps' ? 'tab-btn active' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('rps')}>RPS</button>
+                                <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'self' ? 'tab-btn active' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('self')}>자가소비</button>
+                                <button className={`px-4 py-2 rounded-lg text-xs transition-all ${mode === 'policy' ? 'tab-btn active' : 'text-slate-400 hover:text-white'}`} onClick={() => setMode('policy')}>제도변경</button>
                             </div>
                         </div>
                         {mode !== 'policy' && <button onClick={handleCapture} className="bg-indigo-500 px-6 sm:px-10 py-2.5 sm:py-3.5 rounded-2xl font-black shadow-xl hover:bg-indigo-400 active:scale-95 transition-all text-sm sm:text-base w-full sm:w-auto">리포트 발송</button>}
@@ -449,30 +446,29 @@
                             <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
                                 <div className="glass-card p-10 sm:p-20">
                                     <h2 className="text-3xl sm:text-5xl border-l-10 border-indigo-500 pl-8 mb-12 font-black uppercase tracking-tighter">제도변경 및 업데이트 문서 통합 저장소</h2>
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
                                         <div className="space-y-6">
-                                            <h3 className="text-xl text-slate-400 font-black">업데이트 파일 추가 (실시간 클라우드 공유)</h3>
-                                            <label className="file-drop-zone flex flex-col items-center justify-center h-72 cursor-pointer">
+                                            <h3 className="text-xl text-slate-400 font-black">업데이트 파일 추가</h3>
+                                            <label className="file-drop-zone flex flex-col items-center justify-center h-80 cursor-pointer">
                                                 <div className="flex flex-col items-center justify-center p-10 text-center">
-                                                    <div className="bg-indigo-100 p-6 rounded-full mb-6 text-indigo-600"><svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg></div>
-                                                    <p className="mb-2 text-2xl font-black">파일 업로드하기</p>
-                                                    <p className="text-sm text-slate-400 font-bold">1MB 이상의 파일도 조각내어 안전하게 공유됩니다.</p>
+                                                    <div className="bg-indigo-100 p-8 rounded-full mb-6 text-indigo-600"><svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg></div>
+                                                    <p className="mb-2 text-3xl font-black">파일 업로드하기</p>
+                                                    <p className="text-base text-slate-400 font-bold">PDF, 이미지 문서를 조각내어 안전하게 공유합니다.</p>
                                                 </div>
                                                 <input type="file" className="hidden" multiple onChange={handlePolicyFileUpload} />
                                             </label>
                                         </div>
-                                        <div className="space-y-6">
+                                        <div className="space-y-8">
                                             <h3 className="text-xl text-slate-400 font-black">통합 단어 검색 (페이지 검색 포함)</h3>
                                             <div className="relative">
                                                 <input type="text" placeholder="검색할 제도나 단어를 입력하세요..." className="policy-search-input font-black shadow-xl" value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} />
-                                                <div className="absolute right-6 top-1/2 -translate-y-1/2 text-indigo-500"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></div>
+                                                <div className="absolute right-8 top-1/2 -translate-y-1/2 text-indigo-500"><svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></div>
                                             </div>
-                                            <div className="p-6 bg-slate-50 rounded-[32px] border border-slate-100">
-                                                <h4 className="text-sm text-indigo-600 mb-2 uppercase font-black tracking-widest">Storage & Search Guide</h4>
-                                                <ul className="text-xs text-slate-400 font-bold space-y-2">
-                                                    <li>• <span className="text-indigo-600">Cross Domain Ready</span>: GitHub Pages 등 어떤 배포 환경에서도 중단 없이 사용 가능합니다.</li>
-                                                    <li>• <span className="text-indigo-600">Smart Persistence</span>: 입력한 숫자는 브라우저에 자동 기억됩니다.</li>
-                                                    <li>• <span className="text-indigo-600">Search</span>: 검색 시 문서 내부의 모든 발견 위치(페이지)를 함께 보여줍니다.</li>
+                                            <div className="guide-box">
+                                                <h4 className="text-base text-indigo-600 mb-4 uppercase font-black tracking-widest">STORAGE & SEARCH GUIDE</h4>
+                                                <ul className="text-sm text-slate-500 font-bold space-y-3">
+                                                    <li>• <span className="text-indigo-600">Sync Anywhere</span>: 모든 기기에서 동일한 문서 목록과 수치를 확인하세요.</li>
+                                                    <li>• <span className="text-indigo-600">Advanced Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 추적합니다.</li>
                                                 </ul>
                                             </div>
                                         </div>
@@ -510,8 +506,7 @@
                                                                 {renderHighlightedText(prev, searchKeyword)}
                                                             </td>
                                                             <td className="p-8 text-center flex items-center justify-center gap-4">
-                                                                <button onClick={() => handleViewFile(file)} className="btn-view" title="파일 열기"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg></button>
-                                                                <button onClick={() => handleDeletePolicyFile(file.parentId)} className="text-rose-400 hover:text-rose-600 ml-4"><svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"></path></svg></button>
+                                                                <button onClick={() => handleViewFile(file)} className="text-indigo-600 hover:scale-125 transition-transform"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg></button>
                                                             </td>
                                                         </tr>
                                                     );
