@@ -426,12 +426,25 @@
                 }
             };
 
+            // 요약 문구 생성 로직 (사용자 요구사항에 맞게 설비용량, 공사금액, 한전비용, 총투자비, 대출조건 세분화)
             const getSummaryText = () => {
                 const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
-                let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
-                if (loanActive) t += `■ 대출: ${(loanPrincipal).toLocaleString()}원 (${loanInterest}%, ${loanPeriod} 상환)\n`;
-                if (mode === 'rps') { t += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n`; } 
-                else { const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n`; }
+                let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n`;
+                t += `설비용량: ${capacity.toFixed(3)} kW\n`;
+                t += `공사금액: ${constCost.toLocaleString()}원\n`;
+                t += `한전비용: ${kepcoCost.toLocaleString()}원\n`;
+                t += `총투자비: ${totalInvestmentWon.toLocaleString()}원\n`;
+                
+                if (loanActive) {
+                    t += `대출: ${loanPrincipal.toLocaleString()}원(조건 ${loanInterest}% ${loanGrace}년거치 ${loanPeriod}년상환)\n`;
+                }
+                
+                if (mode === 'rps') {
+                    t += `\n■ 30년 예상매출: ${formatToEok(yearlyData[29].cumRevenue)}억\n■ 30년 순이익: ${formatToEok(yearlyData[29].cumProfit)}억\n`;
+                } else {
+                    const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0);
+                    t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n`;
+                }
                 t += `■ BEP: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
                 return t;
             };
