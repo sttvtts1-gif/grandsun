@@ -53,13 +53,20 @@
 
         .detailed-table th, .detailed-table td {
             white-space: nowrap !important;
-            padding: 10px 6px !important;
+            padding: 12px 10px !important;
         }
 
-        /* --- 캡처 전용 스타일 --- */
+        /* --- 캡처 전용 스타일 (리포트 발송 시 레이아웃 고정) --- */
         .capturing .no-capture { display: none !important; }
         .capturing .no-capture-ui { display: none !important; }
-        .capturing .main-container { width: 1600px !important; max-width: 1600px !important; padding: 60px !important; }
+        
+        .capturing .main-container {
+            width: 1600px !important;
+            max-width: 1600px !important;
+            padding: 60px !important;
+            background-color: #f8fafc !important;
+        }
+
         .capturing .settings-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 24px !important; }
         .capturing .metric-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 24px !important; }
         .capturing .chart-container-box { height: 900px !important; width: 1500px !important; }
@@ -76,7 +83,6 @@
 
         .highlight { background-color: #fde68a; color: #1e293b; padding: 0 2px; border-radius: 2px; }
 
-        /* 제도변경 UI */
         .file-drop-zone {
             border: 4px dashed #cbd5e1;
             background-color: #fcfcfc;
@@ -95,6 +101,8 @@
             background-color: white;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
         }
+        .policy-search-input:focus { border-color: #4f46e5; box-shadow: 0 15px 35px -5px rgba(79, 70, 229, 0.15); }
+        .guide-box { background-color: #f8fafc; border: 2px solid #f1f5f9; border-radius: 2.5rem; padding: 2rem; }
     </style>
 </head>
 <body>
@@ -104,10 +112,10 @@
         const { useState, useMemo, useRef, useEffect } = React;
         const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } = Recharts;
 
-        // --- 데이터 고정용 전역 상단 설정 (초기화 방지) ---
+        // --- 데이터 고정용 전역 상단 설정 (초기화 방지 및 버전 호환성 확보) ---
         const DB_NAME = "GrandSun_Permanent_Device_DB_v2";
-        const SETTINGS_KEY = "grandsun_device_settings_v2";
-        
+        const SETTINGS_KEY = "grandsun_permanent_v1";
+
         const parseInput = (val) => Number(String(val).replace(/[^0-9.]/g, '')) || 0;
         const formatInput = (val) => val === 0 ? "" : Math.round(val).toLocaleString('ko-KR');
         const formatToEok = (val) => (Math.ceil((val / 100000) * 100) / 100).toFixed(2);
@@ -121,20 +129,34 @@
             return parts.map((part, i) => part.toLowerCase() === keyword.toLowerCase() ? <span key={i} className="highlight">{part}</span> : part);
         };
 
+        // 로컬 IndexedDB 무정지 연결 (오류 발생 시 하위 버전 폴백 자동 지원)
         const dbPromise = new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, 1);
+            const request = indexedDB.open(DB_NAME, 2);
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
-                if (!db.objectStoreNames.contains("files")) db.createObjectStore("files", { keyPath: "parentId" });
+                if (!db.objectStoreNames.contains("files")) {
+                    db.createObjectStore("files", { keyPath: "parentId" });
+                }
             };
             request.onsuccess = (e) => resolve(e.target.result);
-            request.onerror = (e) => reject(e.target.error);
+            request.onerror = (e) => {
+                console.error("IndexedDB v2 connection failed, falling back to v1...", e);
+                const reqFallback = indexedDB.open(DB_NAME, 1);
+                reqFallback.onupgradeneeded = (evt) => {
+                    const dbF = evt.target.result;
+                    if (!dbF.objectStoreNames.contains("files")) {
+                        dbF.createObjectStore("files", { keyPath: "parentId" });
+                    }
+                };
+                reqFallback.onsuccess = (evt) => resolve(evt.target.result);
+                reqFallback.onerror = (evt) => reject(evt.target.error);
+            };
         });
 
-        // Firebase 초기화 (배포 대응)
         let fbApp, fbAuth, fbDb;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-production-v16';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'grandsun-v16-report-fix';
         const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        
         try {
             const config = JSON.parse(firebaseConfigStr);
             if (config && config.apiKey) {
@@ -157,7 +179,6 @@
             const [mode, setMode] = useState("rps"); 
             const [user, setUser] = useState(null);
             
-            // 수치 상태
             const [capacityInput, setCapacityInput] = useState("100.000");
             const [constCost, setConstCost] = useState(150000000);
             const [kepcoCost, setKepcoCost] = useState(15000000);
@@ -182,7 +203,7 @@
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
-            // --- 데이터 연산 useMemo (App 최상단 고정: ReferenceError 해결) ---
+            // --- 데이터 연산 useMemo 최상단 고정 (변수 참조 에러 원천 해결) ---
             const capParts = useMemo(() => {
                 const val = String(capacityInput || "0");
                 const p = val.split('.');
@@ -285,9 +306,10 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            // --- 4. 영구 보존 엔진 로드 및 저장 ---
+            // --- 4. 기기 고정 영수증 및 기기 전용 로컬 저장 엔진 동기화 ---
             useEffect(() => {
                 const load = async () => {
+                    // 수치 설정 복구
                     const savedSettings = localStorage.getItem(SETTINGS_KEY);
                     if (savedSettings) {
                         try {
@@ -308,19 +330,19 @@
                             if (d.mode) setMode(d.mode);
                         } catch(e) {}
                     }
+                    
+                    // 기기 독립형 IndexedDB에서 파일 로드 (새로고침/코드 변경에도 영구적 유지 보장)
                     const db = await dbPromise;
                     const store = db.transaction("files", "readonly").objectStore("files");
                     const localFiles = await new Promise(r => { const req = store.getAll(); req.onsuccess = () => r(req.result); });
                     if (localFiles.length > 0) setPolicyDocs(localFiles);
 
+                    // Firebase 익명 인증 및 수치값 저장만 백그라운드로 실행 (파일 데이터는 동기화에서 완전히 독립시킴)
                     if (fbAuth && fbDb) {
                         try {
                             const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
                             if (token) await fbAuth.signInWithCustomToken(token); else await fbAuth.signInAnonymously();
                             const cu = fbAuth.currentUser; if (cu) setUser(cu);
-                            fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles').onSnapshot(s => {
-                                if (!s.empty) setPolicyDocs(s.docs.map(doc => ({id: doc.id, ...doc.data()})));
-                            });
                         } catch(e) { }
                     }
                     isInitialLoadDone.current = true;
@@ -347,7 +369,7 @@
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
                 const db = await dbPromise;
-                const col = fbDb ? fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles') : null;
+                
                 for (const file of files) {
                     const isPdf = file.type === 'application/pdf';
                     let fData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
@@ -364,16 +386,17 @@
                                 fullT += ` [Page ${i}] ` + pt; pData.push({ page: i, text: pt });
                             }
                             fData.content = fullT.substring(0, 500000); fData.pages = JSON.stringify(pData);
-                        }
+                        } else { fData.content = "(문서 파일)"; }
                         const dUrl = await new Promise(r => { const rd = new FileReader(); rd.onload = ev => r(ev.target.result); rd.readAsDataURL(file); });
-                        if (col) {
-                            const CHUNK = 800000; const numC = Math.ceil(dUrl.length / CHUNK);
-                            for (let i = 0; i < numC; i++) { await col.add({ ...fData, chunkIndex: i, isMultipart: numC > 1, dataUrlPart: dUrl.substring(i * CHUNK, (i + 1) * CHUNK), totalChunks: numC }); }
-                        } else {
-                            const tx = db.transaction("files", "readwrite");
-                            await tx.objectStore("files").put({ ...fData, dataUrl: dUrl });
-                            setPolicyDocs(prev => [...prev, { ...fData, dataUrl: dUrl }]);
-                        }
+                        
+                        // 기기 독립성 보장을 위해 각 기기의 로컬 DB(IndexedDB)에만 영구 보존
+                        const tx = db.transaction("files", "readwrite");
+                        await tx.objectStore("files").put({ ...fData, dataUrl: dUrl });
+                        
+                        setPolicyDocs(prev => {
+                            const filtered = prev.filter(doc => doc.name !== file.name);
+                            return [...filtered, { ...fData, dataUrl: dUrl }];
+                        });
                         setStatusMsg(`저장 완료`);
                     } catch (err) { setStatusMsg("저장 실패"); }
                 }
@@ -384,10 +407,6 @@
                 setPolicyDocs(prev => prev.filter(doc => doc.parentId !== parentId));
                 const db = await dbPromise;
                 await db.transaction("files", "readwrite").objectStore("files").delete(parentId);
-                if (user && fbDb) {
-                    const col = fbDb.collection('artifacts').doc(appId).collection('public').doc('data').collection('policyFiles');
-                    col.where('parentId', '==', parentId).get().then(s => { const batch = fbDb.batch(); s.forEach(d => batch.delete(d.ref)); batch.commit(); });
-                }
                 setStatusMsg("삭제 완료"); setTimeout(() => setStatusMsg(""), 2000);
             };
 
@@ -407,17 +426,6 @@
                 }
             };
 
-            const handleCapture = async () => {
-                setStatusMsg("이미지 생성 중...");
-                try {
-                    document.body.classList.add('capturing'); setIsCapturing(true); await new Promise(r => setTimeout(r, 4000));
-                    const can = await html2canvas(captureRef.current, { useCORS: true, backgroundColor: "#f8fafc", scale: 2, scrollX: 0, scrollY: -window.scrollY, windowWidth: 1600 });
-                    setCapturedImage(can.toDataURL("image/jpeg", 0.98));
-                    document.body.classList.remove('capturing'); setIsCapturing(false);
-                    setTimeout(() => setShowModal(true), 100);
-                } catch (e) { document.body.classList.remove('capturing'); setIsCapturing(false); setStatusMsg("캡처 오류"); }
-            };
-
             const getSummaryText = () => {
                 const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
                 let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
@@ -426,6 +434,54 @@
                 else { const total1Y = monthlySavingData.reduce((a,b)=>a+b.saving1Y,0); t += `\n■ 연간 절감액: ${formatToBaekmanTooltip(total1Y)}\n■ 20년 누적절감액: ${formatToBaekmanTooltip(total1Y * 20)}\n`; }
                 t += `■ BEP: ${paybackDetail.year}년 ${paybackDetail.month}개월`;
                 return t;
+            };
+
+            const copyToClipboard = () => {
+                const summary = getSummaryText();
+                const textArea = document.createElement("textarea");
+                textArea.value = summary;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    setStatusMsg("클립보드에 복사되었습니다.");
+                } catch (err) {
+                    setStatusMsg("복사 실패");
+                }
+                document.body.removeChild(textArea);
+                setTimeout(() => setStatusMsg(""), 2000);
+            };
+
+            const handleCapture = async () => {
+                setStatusMsg("이미지 생성 중...");
+                try {
+                    document.body.classList.add('capturing'); 
+                    setIsCapturing(true); 
+                    await new Promise(r => setTimeout(r, 4000));
+                    
+                    const element = captureRef.current;
+                    const canvas = await html2canvas(element, { 
+                        useCORS: true, 
+                        backgroundColor: "#f8fafc", 
+                        scale: 2, 
+                        scrollX: 0, 
+                        scrollY: -window.scrollY, 
+                        windowWidth: 1600 
+                    });
+                    
+                    const dataUrl = canvas.toDataURL("image/jpeg", 0.98);
+                    setCapturedImage(dataUrl);
+                    
+                    document.body.classList.remove('capturing'); 
+                    setIsCapturing(false);
+                    setTimeout(() => setShowModal(true), 100);
+                    setStatusMsg("");
+                } catch (e) { 
+                    console.error("Capture failed:", e);
+                    document.body.classList.remove('capturing'); 
+                    setIsCapturing(false); 
+                    setStatusMsg("캡처 오류"); 
+                }
             };
 
             return (
@@ -469,7 +525,7 @@
                                             <div className="guide-box">
                                                 <h4 className="text-base text-indigo-600 mb-4 uppercase font-black tracking-widest">STORAGE & SEARCH GUIDE</h4>
                                                 <ul className="text-sm text-slate-500 font-bold space-y-3">
-                                                    <li>• <span className="text-indigo-600">Private DB</span>: 기기별 내부 저장소를 사용하므로 새로고침해도 파일이 유지됩니다.</li>
+                                                    <li>• <span className="text-indigo-600">Per-Device Storage</span>: 각 기기별 DB에 본인이 원하는 문서를 저장하고 관리하세요.</li>
                                                     <li>• <span className="text-indigo-600">Deep Search</span>: 검색 시 단어가 포함된 [P. 1, 3, 5] 모든 페이지를 출력합니다.</li>
                                                 </ul>
                                             </div>
@@ -509,7 +565,7 @@
                                                             </td>
                                                             <td className="p-8 text-center flex items-center justify-center gap-4">
                                                                 <button onClick={() => handleViewFile(file)} className="text-indigo-600 hover:scale-125 transition-transform"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg></button>
-                                                                <button onClick={() => handleDeletePolicyFile(file.parentId)} className="text-rose-400 hover:scale-125 transition-transform ml-2"><svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"></path></svg></button>
+                                                                <button onClick={() => handleDeletePolicyFile(file.parentId)} className="text-rose-400 hover:scale-125 transition-transform ml-2"><svg className="w-10 h-10" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"></path></svg></button>
                                                             </td>
                                                         </tr>
                                                     );
