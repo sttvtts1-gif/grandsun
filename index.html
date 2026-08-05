@@ -196,7 +196,7 @@
             const [policyDocs, setPolicyDocs] = useState([]);
             const [searchKeyword, setSearchKeyword] = useState("");
             const [sortConfig, setSortConfig] = useState({ key: 'timestamp', direction: 'desc' });
-            const [hoveredPage, setHoveredPage] = useState(null);
+            const [openPagePreview, setOpenPagePreview] = useState(null);
             const [selectedPolicyFile, setSelectedPolicyFile] = useState(null);
             const [isCapturing, setIsCapturing] = useState(false);
             const [capturedImage, setCapturedImage] = useState(null);
@@ -331,13 +331,6 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
-            // 페이지 미리보기 팝업 바깥을 탭하면 닫히도록 처리
-            useEffect(() => {
-                const closePagePreview = () => setHoveredPage(null);
-                document.addEventListener('click', closePagePreview);
-                return () => document.removeEventListener('click', closePagePreview);
-            }, []);
-
             // --- 4. 기기 고정 영수증 및 기기 전용 로컬 저장 엔진 동기화 ---
             useEffect(() => {
                 const load = async () => {
@@ -458,13 +451,6 @@
                 } catch (e) {
                     const w = window.open(); if (w) { w.document.write(`<iframe src="${file.dataUrl}${pageNum ? '#page=' + pageNum : ''}" frameborder="0" style="border:0; width:100%; height:100%;" allowfullscreen></iframe>`); w.document.title = file.name; }
                 }
-            };
-
-            const getPageSnippet = (pageText, keyword) => {
-                if (!pageText) return "";
-                const pidx = pageText.toLowerCase().indexOf(keyword.toLowerCase());
-                if (pidx === -1) return pageText.substring(0, 90) + "...";
-                return "..." + pageText.substring(Math.max(0, pidx - 35), pidx + 65) + "...";
             };
 
             const getSummaryText = () => {
@@ -613,37 +599,20 @@
                                                             <td className="p-8 text-sm text-slate-500 max-w-xl">
                                                                 {matchPages.length > 0 && (
                                                                     <div className="flex flex-wrap gap-1.5 mb-2">
-                                                                        {matchPages.map(p => {
-                                                                            const chipKey = `${file.parentId}-${p.page}`;
-                                                                            const isOpen = hoveredPage && hoveredPage.key === chipKey;
-                                                                            return (
-                                                                                <div key={p.page} className="relative inline-block">
-                                                                                    <button
-                                                                                        onClick={(e) => {
-                                                                                            e.stopPropagation();
-                                                                                            if (isOpen) { handleViewFile(file, p.page); setHoveredPage(null); }
-                                                                                            else { setHoveredPage({ key: chipKey, text: getPageSnippet(p.text, searchKeyword) }); }
-                                                                                        }}
-                                                                                        onContextMenu={(e) => e.preventDefault()}
-                                                                                        className="select-none text-rose-500 font-black bg-rose-50 hover:bg-rose-200 active:scale-95 px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer border border-rose-100"
-                                                                                        style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
-                                                                                    >
-                                                                                        P.{p.page}
-                                                                                    </button>
-                                                                                    {isOpen && (
-                                                                                        <div
-                                                                                            onClick={(e) => { e.stopPropagation(); handleViewFile(file, p.page); setHoveredPage(null); }}
-                                                                                            onContextMenu={(e) => e.preventDefault()}
-                                                                                            className="select-none absolute z-[999] bottom-full left-0 mb-2 w-72 bg-slate-900 text-white text-[11px] font-bold p-3 rounded-xl shadow-2xl whitespace-normal leading-relaxed cursor-pointer"
-                                                                                            style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
-                                                                                        >
-                                                                                            {renderHighlightedText(hoveredPage.text, searchKeyword)}
-                                                                                            <div className="text-[9px] text-rose-300 mt-1 uppercase tracking-wider">한 번 더 탭하면 {p.page}페이지로 이동</div>
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
-                                                                            );
-                                                                        })}
+                                                                        {matchPages.map(p => (
+                                                                            <button
+                                                                                key={p.page}
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setOpenPagePreview({ file, page: p.page, text: p.text });
+                                                                                }}
+                                                                                onContextMenu={(e) => e.preventDefault()}
+                                                                                className="select-none text-rose-500 font-black bg-rose-50 hover:bg-rose-200 active:scale-95 px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer border border-rose-100"
+                                                                                style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
+                                                                            >
+                                                                                P.{p.page}
+                                                                            </button>
+                                                                        ))}
                                                                     </div>
                                                                 )}
                                                                 <div className="truncate">{renderHighlightedText(prev, searchKeyword)}</div>
@@ -788,6 +757,31 @@
                                 <div className="p-10 border-b-2 flex justify-between items-center bg-slate-50"><h3 className="text-2xl font-black text-slate-800 truncate pr-10">{selectedPolicyFile.name}</h3><button onClick={()=>setSelectedPolicyFile(null)} className="text-slate-400 hover:text-slate-900 text-6xl leading-none">&times;</button></div>
                                 <div className="flex-1 overflow-y-auto p-12 bg-white text-slate-600 leading-relaxed font-black whitespace-pre-wrap">{renderHighlightedText(selectedPolicyFile.content, searchKeyword)}</div>
                                 <div className="p-10 bg-slate-50 flex justify-end"><button onClick={()=>setSelectedPolicyFile(null)} className="bg-indigo-600 text-white px-12 py-4 rounded-2xl text-xl font-black shadow-lg">창 닫기</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {openPagePreview && (
+                        <div className="fixed inset-0 z-[350] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md" onClick={() => setOpenPagePreview(null)}>
+                            <div className="bg-white w-full max-w-2xl rounded-[40px] overflow-hidden shadow-2xl flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+                                <div className="p-8 border-b-2 flex justify-between items-center bg-slate-50">
+                                    <div className="pr-6 overflow-hidden">
+                                        <h3 className="text-lg font-black text-slate-800 truncate">{openPagePreview.file.name}</h3>
+                                        <span className="inline-block mt-1 text-rose-500 text-xs font-black bg-rose-50 px-3 py-1 rounded-lg border border-rose-100">P.{openPagePreview.page} 전체 미리보기</span>
+                                    </div>
+                                    <button onClick={() => setOpenPagePreview(null)} className="text-slate-400 hover:text-slate-900 text-5xl leading-none flex-shrink-0">&times;</button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-8 bg-white text-slate-600 leading-relaxed font-bold text-[13px] whitespace-pre-wrap">
+                                    {renderHighlightedText(openPagePreview.text, searchKeyword)}
+                                </div>
+                                <div className="p-6 bg-slate-50 border-t-2">
+                                    <button
+                                        onClick={() => { const { file, page } = openPagePreview; setOpenPagePreview(null); handleViewFile(file, page); }}
+                                        className="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white py-4 rounded-2xl text-base font-black shadow-lg transition-all"
+                                    >
+                                        📄 이 페이지({openPagePreview.page}p)로 바로 이동
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}
