@@ -195,6 +195,7 @@
             
             const [policyDocs, setPolicyDocs] = useState([]);
             const [searchKeyword, setSearchKeyword] = useState("");
+            const [sortConfig, setSortConfig] = useState({ key: 'timestamp', direction: 'desc' });
             const [selectedPolicyFile, setSelectedPolicyFile] = useState(null);
             const [isCapturing, setIsCapturing] = useState(false);
             const [capturedImage, setCapturedImage] = useState(null);
@@ -299,10 +300,33 @@
                 });
             }, [policyDocs]);
 
+            const handleSort = (key) => {
+                setSortConfig(prev => {
+                    if (prev.key === key) {
+                        return { key, direction: prev.direction === 'desc' ? 'asc' : 'desc' };
+                    }
+                    return { key, direction: 'desc' };
+                });
+            };
+
             const filteredPolicyFiles = useMemo(() => {
                 const kw = searchKeyword.toLowerCase();
-                return combinedPolicyFiles.filter(f => f.name.toLowerCase().includes(kw) || (f.content && f.content.toLowerCase().includes(kw)));
-            }, [combinedPolicyFiles, searchKeyword]);
+                const filtered = combinedPolicyFiles.filter(f => f.name.toLowerCase().includes(kw) || (f.content && f.content.toLowerCase().includes(kw)));
+                const sorted = [...filtered].sort((a, b) => {
+                    let valA, valB;
+                    if (sortConfig.key === 'name') {
+                        valA = (a.name || '').toLowerCase();
+                        valB = (b.name || '').toLowerCase();
+                    } else {
+                        valA = a.timestamp || 0;
+                        valB = b.timestamp || 0;
+                    }
+                    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                    return 0;
+                });
+                return sorted;
+            }, [combinedPolicyFiles, searchKeyword, sortConfig]);
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
@@ -372,7 +396,7 @@
                 
                 for (const file of files) {
                     const isPdf = file.type === 'application/pdf';
-                    let fData = { name: file.name, date: new Date().toLocaleDateString(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
+                    let fData = { name: file.name, date: new Date().toLocaleDateString(), timestamp: Date.now(), type: file.type, content: "", pages: null, parentId: crypto.randomUUID(), isPdf: isPdf };
                     try {
                         setStatusMsg(`${file.name} 분석 중...`);
                         if (isPdf) {
@@ -540,7 +564,16 @@
                                     <div className="table-container">
                                         <table className="w-full text-left">
                                             <thead className="bg-slate-50 text-slate-400 font-black border-b-2 border-slate-100 uppercase tracking-wider text-sm">
-                                                <tr><th className="p-8">파일명</th><th className="p-8">업로드 일자</th><th className="p-8">검색 문맥 / 모든 발견 위치(페이지)</th><th className="p-8 text-center">관리</th></tr>
+                                                <tr>
+                                                    <th className="p-8 cursor-pointer select-none hover:text-indigo-600 transition-colors" onClick={() => handleSort('name')}>
+                                                        파일명 {sortConfig.key === 'name' && (sortConfig.direction === 'desc' ? '▼' : '▲')}
+                                                    </th>
+                                                    <th className="p-8 cursor-pointer select-none hover:text-indigo-600 transition-colors" onClick={() => handleSort('timestamp')}>
+                                                        업로드 일자 {sortConfig.key === 'timestamp' && (sortConfig.direction === 'desc' ? '▼' : '▲')}
+                                                    </th>
+                                                    <th className="p-8">검색 문맥 / 모든 발견 위치(페이지)</th>
+                                                    <th className="p-8 text-center">관리</th>
+                                                </tr>
                                             </thead>
                                             <tbody className="font-black text-slate-700 divide-y divide-slate-50">
                                                 {filteredPolicyFiles.length > 0 ? filteredPolicyFiles.map(file => {
