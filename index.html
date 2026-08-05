@@ -455,7 +455,7 @@
 
             // 브라우저(특히 크롬)가 blob PDF의 #page= 이동을 항상 지키지는 않아서,
             // 해당 페이지를 직접 이미지로 렌더링해서 모달 안에서 바로 보여주는 방식으로 대체
-            const renderPdfPageImage = async (file, pageNum) => {
+            const renderPdfPageImage = async (file, pageNum, keyword) => {
                 try {
                     const base64 = file.dataUrl.split(',')[1];
                     const binary = atob(base64);
@@ -469,6 +469,32 @@
                     canvas.height = viewport.height;
                     const ctx = canvas.getContext('2d');
                     await page.render({ canvasContext: ctx, viewport }).promise;
+
+                    // 검색어가 포함된 텍스트 위치를 형광펜처럼 표시
+                    if (keyword && keyword.trim()) {
+                        try {
+                            const textContent = await page.getTextContent();
+                            const kw = keyword.toLowerCase();
+                            ctx.save();
+                            ctx.globalCompositeOperation = 'multiply';
+                            ctx.fillStyle = '#fde68a';
+                            textContent.items.forEach(item => {
+                                if (item.str && item.str.toLowerCase().includes(kw)) {
+                                    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+                                    const fontHeight = Math.hypot(tx[2], tx[3]) || 10;
+                                    const scaleX = Math.hypot(tx[0], tx[1]) || 1;
+                                    const width = Math.max(item.width * scaleX, fontHeight * 0.6);
+                                    const x = tx[4];
+                                    const y = tx[5] - fontHeight;
+                                    ctx.fillRect(x - 2, y - 2, width + 4, fontHeight + 4);
+                                }
+                            });
+                            ctx.restore();
+                        } catch (highlightErr) {
+                            console.error('하이라이트 표시 실패', highlightErr);
+                        }
+                    }
+
                     return canvas.toDataURL('image/png');
                 } catch (e) {
                     console.error('페이지 렌더링 실패', e);
@@ -629,7 +655,7 @@
                                                                                     e.stopPropagation();
                                                                                     const key = `${file.parentId}-${p.page}`;
                                                                                     setOpenPagePreview({ key, file, page: p.page, text: p.text, imageUrl: null, loading: true });
-                                                                                    const img = await renderPdfPageImage(file, p.page);
+                                                                                    const img = await renderPdfPageImage(file, p.page, searchKeyword);
                                                                                     setOpenPagePreview(prev => (prev && prev.key === key) ? { ...prev, imageUrl: img, loading: false } : prev);
                                                                                 }}
                                                                                 onContextMenu={(e) => e.preventDefault()}
