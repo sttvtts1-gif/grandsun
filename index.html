@@ -453,6 +453,29 @@
                 }
             };
 
+            // 브라우저(특히 크롬)가 blob PDF의 #page= 이동을 항상 지키지는 않아서,
+            // 해당 페이지를 직접 이미지로 렌더링해서 모달 안에서 바로 보여주는 방식으로 대체
+            const renderPdfPageImage = async (file, pageNum) => {
+                try {
+                    const base64 = file.dataUrl.split(',')[1];
+                    const binary = atob(base64);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+                    const page = await pdf.getPage(pageNum);
+                    const viewport = page.getViewport({ scale: 1.6 });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    const ctx = canvas.getContext('2d');
+                    await page.render({ canvasContext: ctx, viewport }).promise;
+                    return canvas.toDataURL('image/png');
+                } catch (e) {
+                    console.error('페이지 렌더링 실패', e);
+                    return null;
+                }
+            };
+
             const getSummaryText = () => {
                 const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
                 let t = `[그랜드썬기술단] ${modeLabel} 결과 요약\n\n■ 설비용량: ${capacity.toFixed(3)} kW\n■ 총투자비: ${(totalInvestmentWon).toLocaleString()}원\n`;
@@ -602,9 +625,12 @@
                                                                         {matchPages.map(p => (
                                                                             <button
                                                                                 key={p.page}
-                                                                                onClick={(e) => {
+                                                                                onClick={async (e) => {
                                                                                     e.stopPropagation();
-                                                                                    setOpenPagePreview({ file, page: p.page, text: p.text });
+                                                                                    const key = `${file.parentId}-${p.page}`;
+                                                                                    setOpenPagePreview({ key, file, page: p.page, text: p.text, imageUrl: null, loading: true });
+                                                                                    const img = await renderPdfPageImage(file, p.page);
+                                                                                    setOpenPagePreview(prev => (prev && prev.key === key) ? { ...prev, imageUrl: img, loading: false } : prev);
                                                                                 }}
                                                                                 onContextMenu={(e) => e.preventDefault()}
                                                                                 className="select-none text-rose-500 font-black bg-rose-50 hover:bg-rose-200 active:scale-95 px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer border border-rose-100"
@@ -763,24 +789,33 @@
 
                     {openPagePreview && (
                         <div className="fixed inset-0 z-[350] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md" onClick={() => setOpenPagePreview(null)}>
-                            <div className="bg-white w-full max-w-2xl rounded-[40px] overflow-hidden shadow-2xl flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+                            <div className="bg-white w-full max-w-2xl rounded-[40px] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
                                 <div className="p-8 border-b-2 flex justify-between items-center bg-slate-50">
                                     <div className="pr-6 overflow-hidden">
                                         <h3 className="text-lg font-black text-slate-800 truncate">{openPagePreview.file.name}</h3>
-                                        <span className="inline-block mt-1 text-rose-500 text-xs font-black bg-rose-50 px-3 py-1 rounded-lg border border-rose-100">P.{openPagePreview.page} 전체 미리보기</span>
+                                        <span className="inline-block mt-1 text-rose-500 text-xs font-black bg-rose-50 px-3 py-1 rounded-lg border border-rose-100">P.{openPagePreview.page} 실제 페이지 미리보기</span>
                                     </div>
                                     <button onClick={() => setOpenPagePreview(null)} className="text-slate-400 hover:text-slate-900 text-5xl leading-none flex-shrink-0">&times;</button>
                                 </div>
-                                <div className="flex-1 overflow-y-auto p-8 bg-white text-slate-600 leading-relaxed font-bold text-[13px] whitespace-pre-wrap">
-                                    {renderHighlightedText(openPagePreview.text, searchKeyword)}
+                                <div className="flex-1 overflow-y-auto bg-slate-100 flex items-start justify-center p-4">
+                                    {openPagePreview.loading ? (
+                                        <div className="text-slate-400 font-black py-24 text-sm">페이지 불러오는 중...</div>
+                                    ) : openPagePreview.imageUrl ? (
+                                        <img src={openPagePreview.imageUrl} className="w-full h-auto rounded-2xl shadow-lg border border-slate-200 bg-white" />
+                                    ) : (
+                                        <div className="p-4 text-slate-600 leading-relaxed font-bold text-[13px] whitespace-pre-wrap w-full">
+                                            {renderHighlightedText(openPagePreview.text, searchKeyword)}
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="p-6 bg-slate-50 border-t-2">
+                                <div className="p-6 bg-slate-50 border-t-2 space-y-2">
                                     <button
                                         onClick={() => { const { file, page } = openPagePreview; setOpenPagePreview(null); handleViewFile(file, page); }}
                                         className="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white py-4 rounded-2xl text-base font-black shadow-lg transition-all"
                                     >
-                                        📄 이 페이지({openPagePreview.page}p)로 바로 이동
+                                        📄 PDF 원본 파일 새 창에서 열기
                                     </button>
+                                    <p className="text-center text-[10px] text-slate-400 font-bold">브라우저에 따라 새 창이 첫 페이지부터 열릴 수 있어요. 위 미리보기가 실제 {openPagePreview.page}페이지 내용이니 참고하세요.</p>
                                 </div>
                             </div>
                         </div>
