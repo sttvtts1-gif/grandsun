@@ -331,6 +331,13 @@
 
             const avgMonthlyRevenue = useMemo(() => yearlyData.length > 0 ? (yearlyData[0].revenue * 1000) / 12 : 0, [yearlyData]);
 
+            // 페이지 미리보기 팝업 바깥을 탭하면 닫히도록 처리
+            useEffect(() => {
+                const closePagePreview = () => setHoveredPage(null);
+                document.addEventListener('click', closePagePreview);
+                return () => document.removeEventListener('click', closePagePreview);
+            }, []);
+
             // --- 4. 기기 고정 영수증 및 기기 전용 로컬 저장 엔진 동기화 ---
             useEffect(() => {
                 const load = async () => {
@@ -608,24 +615,30 @@
                                                                     <div className="flex flex-wrap gap-1.5 mb-2">
                                                                         {matchPages.map(p => {
                                                                             const chipKey = `${file.parentId}-${p.page}`;
-                                                                            const isHovered = hoveredPage && hoveredPage.key === chipKey;
+                                                                            const isOpen = hoveredPage && hoveredPage.key === chipKey;
                                                                             return (
                                                                                 <div key={p.page} className="relative inline-block">
                                                                                     <button
-                                                                                        onClick={() => handleViewFile(file, p.page)}
-                                                                                        onMouseEnter={() => setHoveredPage({ key: chipKey, text: getPageSnippet(p.text, searchKeyword) })}
-                                                                                        onMouseLeave={() => setHoveredPage(null)}
-                                                                                        onFocus={() => setHoveredPage({ key: chipKey, text: getPageSnippet(p.text, searchKeyword) })}
-                                                                                        onBlur={() => setHoveredPage(null)}
-                                                                                        className="text-rose-500 font-black bg-rose-50 hover:bg-rose-200 active:scale-95 px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer border border-rose-100"
-                                                                                        title={`${p.page}페이지로 이동`}
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            if (isOpen) { handleViewFile(file, p.page); setHoveredPage(null); }
+                                                                                            else { setHoveredPage({ key: chipKey, text: getPageSnippet(p.text, searchKeyword) }); }
+                                                                                        }}
+                                                                                        onContextMenu={(e) => e.preventDefault()}
+                                                                                        className="select-none text-rose-500 font-black bg-rose-50 hover:bg-rose-200 active:scale-95 px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer border border-rose-100"
+                                                                                        style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
                                                                                     >
                                                                                         P.{p.page}
                                                                                     </button>
-                                                                                    {isHovered && (
-                                                                                        <div className="absolute z-[999] bottom-full left-0 mb-2 w-72 bg-slate-900 text-white text-[11px] font-bold p-3 rounded-xl shadow-2xl whitespace-normal leading-relaxed pointer-events-none">
+                                                                                    {isOpen && (
+                                                                                        <div
+                                                                                            onClick={(e) => { e.stopPropagation(); handleViewFile(file, p.page); setHoveredPage(null); }}
+                                                                                            onContextMenu={(e) => e.preventDefault()}
+                                                                                            className="select-none absolute z-[999] bottom-full left-0 mb-2 w-72 bg-slate-900 text-white text-[11px] font-bold p-3 rounded-xl shadow-2xl whitespace-normal leading-relaxed cursor-pointer"
+                                                                                            style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
+                                                                                        >
                                                                                             {renderHighlightedText(hoveredPage.text, searchKeyword)}
-                                                                                            <div className="text-[9px] text-rose-300 mt-1 uppercase tracking-wider">클릭하면 {p.page}페이지로 이동</div>
+                                                                                            <div className="text-[9px] text-rose-300 mt-1 uppercase tracking-wider">한 번 더 탭하면 {p.page}페이지로 이동</div>
                                                                                         </div>
                                                                                     )}
                                                                                 </div>
