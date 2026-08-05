@@ -196,6 +196,7 @@
             const [policyDocs, setPolicyDocs] = useState([]);
             const [searchKeyword, setSearchKeyword] = useState("");
             const [sortConfig, setSortConfig] = useState({ key: 'timestamp', direction: 'desc' });
+            const [hoveredPage, setHoveredPage] = useState(null);
             const [selectedPolicyFile, setSelectedPolicyFile] = useState(null);
             const [isCapturing, setIsCapturing] = useState(false);
             const [capturedImage, setCapturedImage] = useState(null);
@@ -434,7 +435,7 @@
                 setStatusMsg("삭제 완료"); setTimeout(() => setStatusMsg(""), 2000);
             };
 
-            const handleViewFile = (file) => {
+            const handleViewFile = (file, pageNum) => {
                 try {
                     if (file.type.startsWith('application/pdf') || file.type.startsWith('image/')) {
                         const base64Parts = file.dataUrl.split(',');
@@ -443,11 +444,20 @@
                         for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
                         const blob = new Blob([new Uint8Array(byteNumbers)], {type: file.type});
                         const blobUrl = URL.createObjectURL(blob);
-                        window.open(blobUrl, '_blank');
+                        const isPdfFile = file.type.startsWith('application/pdf');
+                        const finalUrl = (isPdfFile && pageNum) ? `${blobUrl}#page=${pageNum}` : blobUrl;
+                        window.open(finalUrl, '_blank');
                     } else { setSelectedPolicyFile(file); }
                 } catch (e) {
-                    const w = window.open(); if (w) { w.document.write(`<iframe src="${file.dataUrl}" frameborder="0" style="border:0; width:100%; height:100%;" allowfullscreen></iframe>`); w.document.title = file.name; }
+                    const w = window.open(); if (w) { w.document.write(`<iframe src="${file.dataUrl}${pageNum ? '#page=' + pageNum : ''}" frameborder="0" style="border:0; width:100%; height:100%;" allowfullscreen></iframe>`); w.document.title = file.name; }
                 }
+            };
+
+            const getPageSnippet = (pageText, keyword) => {
+                if (!pageText) return "";
+                const pidx = pageText.toLowerCase().indexOf(keyword.toLowerCase());
+                if (pidx === -1) return pageText.substring(0, 90) + "...";
+                return "..." + pageText.substring(Math.max(0, pidx - 35), pidx + 65) + "...";
             };
 
             const getSummaryText = () => {
@@ -577,12 +587,13 @@
                                             </thead>
                                             <tbody className="font-black text-slate-700 divide-y divide-slate-50">
                                                 {filteredPolicyFiles.length > 0 ? filteredPolicyFiles.map(file => {
-                                                    let mP = ""; let mTx = file.content || "";
+                                                    let mTx = file.content || "";
+                                                    let matchPages = [];
                                                     if (file.isPdf && file.pages && searchKeyword) {
                                                         try {
                                                             const pages = JSON.parse(file.pages);
-                                                            const matchP = pages.filter(p => p.text.toLowerCase().includes(searchKeyword.toLowerCase()));
-                                                            if (matchP.length > 0) { mP = ` [P. ${matchP.map(p => p.page).join(', ')}] `; mTx = matchP[0].text; }
+                                                            matchPages = pages.filter(p => p.text.toLowerCase().includes(searchKeyword.toLowerCase()));
+                                                            if (matchPages.length > 0) mTx = matchPages[0].text;
                                                         } catch(e) {}
                                                     }
                                                     const idx = mTx.toLowerCase().indexOf(searchKeyword.toLowerCase());
@@ -592,9 +603,37 @@
                                                         <tr key={file.parentId} className="hover:bg-slate-50/80 transition-all group">
                                                             <td className="p-8 text-indigo-600 text-lg">{renderHighlightedText(file.name, searchKeyword)}</td>
                                                             <td className="p-8 text-slate-400 text-sm">{file.date}</td>
-                                                            <td className="p-8 text-sm text-slate-500 max-w-xl truncate">
-                                                                <span className="text-rose-500 font-black mr-2 bg-rose-50 px-2 py-1 rounded-lg">{mP}</span>
-                                                                {renderHighlightedText(prev, searchKeyword)}
+                                                            <td className="p-8 text-sm text-slate-500 max-w-xl">
+                                                                {matchPages.length > 0 && (
+                                                                    <div className="flex flex-wrap gap-1.5 mb-2">
+                                                                        {matchPages.map(p => {
+                                                                            const chipKey = `${file.parentId}-${p.page}`;
+                                                                            const isHovered = hoveredPage && hoveredPage.key === chipKey;
+                                                                            return (
+                                                                                <div key={p.page} className="relative inline-block">
+                                                                                    <button
+                                                                                        onClick={() => handleViewFile(file, p.page)}
+                                                                                        onMouseEnter={() => setHoveredPage({ key: chipKey, text: getPageSnippet(p.text, searchKeyword) })}
+                                                                                        onMouseLeave={() => setHoveredPage(null)}
+                                                                                        onFocus={() => setHoveredPage({ key: chipKey, text: getPageSnippet(p.text, searchKeyword) })}
+                                                                                        onBlur={() => setHoveredPage(null)}
+                                                                                        className="text-rose-500 font-black bg-rose-50 hover:bg-rose-200 active:scale-95 px-2.5 py-1 rounded-lg text-xs transition-all cursor-pointer border border-rose-100"
+                                                                                        title={`${p.page}페이지로 이동`}
+                                                                                    >
+                                                                                        P.{p.page}
+                                                                                    </button>
+                                                                                    {isHovered && (
+                                                                                        <div className="absolute z-[999] bottom-full left-0 mb-2 w-72 bg-slate-900 text-white text-[11px] font-bold p-3 rounded-xl shadow-2xl whitespace-normal leading-relaxed pointer-events-none">
+                                                                                            {renderHighlightedText(hoveredPage.text, searchKeyword)}
+                                                                                            <div className="text-[9px] text-rose-300 mt-1 uppercase tracking-wider">클릭하면 {p.page}페이지로 이동</div>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                                <div className="truncate">{renderHighlightedText(prev, searchKeyword)}</div>
                                                             </td>
                                                             <td className="p-8 text-center flex items-center justify-center gap-4">
                                                                 <button onClick={() => handleViewFile(file)} className="text-indigo-600 hover:scale-125 transition-transform"><svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg></button>
