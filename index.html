@@ -273,6 +273,7 @@
             const [showModal, setShowModal] = useState(false);
             const [statusMsg, setStatusMsg] = useState("");
             const [reportEmail, setReportEmail] = useState("");
+            const [reportCompany, setReportCompany] = useState("");
             const captureRef = useRef(null);
             const isInitialLoadDone = useRef(false);
 
@@ -638,11 +639,55 @@
                 setTimeout(() => setStatusMsg(""), 2000);
             };
 
-            // 이메일 발송: 브라우저 보안 정책상 mailto 링크는 파일을 자동 첨부할 수 없어서,
-            // 리포트 이미지를 먼저 다운로드시킨 뒤 메일 작성창(제목/본문 자동입력)을 열어주는 방식
-            const sendEmail = () => {
+            // 이메일 발송
+            // 1순위: Web Share API로 리포트 이미지를 "첨부된 상태"로 공유 (모바일 Gmail 등 지원)
+            //        → mailto와 달리 실제로 사진이 자동 첨부됨 (단, 받는사람 주소는 메일앱에서 직접 입력)
+            // 2순위(미지원 브라우저): 이미지 자동 다운로드 + mailto (수동 첨부 필요)
+            const BUSINESS_CARD_SIGNATURE =
+                "─────────────────────\n" +
+                "조성현 (CHO, SEONG-HYEON)\n" +
+                "에너지사업부 | 부장   |   GRANDSUN 기술단\n\n" +
+                "TEL     1800-8513 | 010-3116-1155\n" +
+                "E-MAIL  sh.cho@gsmail.kr\n" +
+                "WEB     www.gseng.org\n\n" +
+                "본사     부산광역시 강서구 체육공원로6번길 109\n" +
+                "중부지사  경기도 안성시 삼죽면 삼죽로 205-41\n" +
+                "경북지사  경상북도 봉화군 춘양면 의양로 37\n" +
+                "경남지사  경상남도 김해시 주촌면 골든루트로 129번길 12-2";
+
+            const getEmailSubject = () => {
+                const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
+                const companyLabel = reportCompany.trim() ? `[${reportCompany.trim()}]` : '[그랜드썬기술단]';
+                return `${companyLabel} ${modeLabel} 리포트`;
+            };
+
+            const getEmailBody = (attachNoteNeeded) => {
+                let t = getSummaryText() + "\n\n" + BUSINESS_CARD_SIGNATURE;
+                if (attachNoteNeeded) t += "\n\n※ 방금 다운로드된 '그랜드썬_리포트.jpg' 이미지를 메일에 첨부해서 보내주세요.";
+                return t;
+            };
+
+            const sendEmail = async () => {
                 if (!capturedImage) { setStatusMsg("이미지 생성 후 이용해주세요."); setTimeout(() => setStatusMsg(""), 2000); return; }
 
+                const subjectText = getEmailSubject();
+
+                // 1) Web Share API 시도 (이미지 자동 첨부)
+                try {
+                    const res = await fetch(capturedImage);
+                    const blob = await res.blob();
+                    const file = new File([blob], "그랜드썬_리포트.jpg", { type: "image/jpeg" });
+                    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                        await navigator.share({ title: subjectText, text: getEmailBody(false), files: [file] });
+                        setStatusMsg("공유 시트에서 메일 앱을 선택하면 사진이 자동 첨부됩니다.");
+                        setTimeout(() => setStatusMsg(""), 3000);
+                        return;
+                    }
+                } catch (shareErr) {
+                    if (shareErr && shareErr.name === 'AbortError') return; // 사용자가 공유 취소
+                }
+
+                // 2) 폴백: 이미지 다운로드 + mailto (첨부는 수동)
                 const link = document.createElement('a');
                 link.href = capturedImage;
                 link.download = "그랜드썬_리포트.jpg";
@@ -650,15 +695,11 @@
                 link.click();
                 document.body.removeChild(link);
 
-                const modeLabel = mode === 'rps' ? 'RPS 수익 분석' : '자가소비 절감 분석';
-                const subject = encodeURIComponent(`[그랜드썬기술단] ${modeLabel} 리포트`);
-                const body = encodeURIComponent(
-                    getSummaryText() +
-                    "\n\n※ 방금 다운로드된 '그랜드썬_리포트.jpg' 이미지를 메일에 첨부해서 보내주세요.\n(메일 앱은 보안상 자동 첨부가 불가능해 수동 첨부가 필요합니다)"
-                );
+                const subject = encodeURIComponent(subjectText);
+                const body = encodeURIComponent(getEmailBody(true));
                 const to = reportEmail ? encodeURIComponent(reportEmail.trim()) : "";
 
-                setStatusMsg("이미지 다운로드 완료! 메일 작성창을 여는 중...");
+                setStatusMsg("이 브라우저는 자동 첨부를 지원하지 않아 이미지를 다운로드했습니다. 메일 작성창을 여는 중...");
                 setTimeout(() => {
                     window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
                     setStatusMsg("");
@@ -1005,6 +1046,13 @@
 
                                     <div className="w-full pt-4 border-t-2 border-slate-100 flex flex-col gap-4">
                                         <input
+                                            type="text"
+                                            placeholder="업체명 (메일 제목에 [업체명]으로 표시됩니다)"
+                                            value={reportCompany}
+                                            onChange={(e) => setReportCompany(e.target.value)}
+                                            className="email-input font-black text-slate-700"
+                                        />
+                                        <input
                                             type="email"
                                             placeholder="받는사람 이메일 (선택 입력, 비워두면 직접 입력)"
                                             value={reportEmail}
@@ -1012,7 +1060,7 @@
                                             className="email-input font-black text-slate-700"
                                         />
                                         <button onClick={sendEmail} className="w-full bg-slate-800 text-white py-8 rounded-[40px] text-3xl shadow-xl hover:bg-slate-900 active:scale-95 transition-all font-black flex items-center justify-center gap-4">📧 이메일로 리포트 보내기</button>
-                                        <p className="text-center text-xs text-slate-400 font-bold">리포트 이미지가 자동 다운로드된 후 메일 작성창이 열립니다. 첨부파일란에 다운로드된 이미지를 수동으로 추가해주세요.</p>
+                                        <p className="text-center text-xs text-slate-400 font-bold">가능한 경우 공유 시트를 통해 사진이 자동 첨부됩니다. 지원하지 않는 브라우저는 이미지가 다운로드되니 메일에 수동으로 첨부해주세요.</p>
                                     </div>
                                 </div>
                             </div>
