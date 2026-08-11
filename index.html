@@ -542,14 +542,53 @@
                     await page.render({ canvasContext: ctx, viewport }).promise;
 
                     // 검색어가 포함된 텍스트 위치를 형광펜처럼 표시 (띄어쓰기 무관 매칭)
+                    // PDF는 같은 단어라도 "국산"/"인버터"처럼 서로 다른 텍스트 조각(item)으로 쪼개져
+                    // 저장되는 경우가 많아서, 조각 하나만 보고 매칭하면 놓치는 경우가 있음.
+                    // → 페이지 전체를 이어붙인 텍스트에서 매칭 구간을 먼저 찾고, 그 구간과 겹치는
+                    //   모든 조각을 하이라이트하는 방식으로 처리 (matchPages 판별 로직과 동일한 기준)
                     if (keyword && keyword.trim()) {
                         try {
                             const textContent = await page.getTextContent();
-                            ctx.save();
-                            ctx.globalCompositeOperation = 'multiply';
-                            ctx.fillStyle = '#fde68a';
-                            textContent.items.forEach(item => {
-                                if (item.str && fuzzyIncludes(item.str, keyword)) {
+                            const items = textContent.items;
+
+                            let joinedText = "";
+                            const itemRanges = [];
+                            items.forEach((item, idx) => {
+                                const start = joinedText.length;
+                                joinedText += (item.str || "");
+                                const end = joinedText.length;
+                                itemRanges.push({ start, end, idx });
+                                joinedText += " ";
+                            });
+
+                            const map = buildIndexMap(joinedText);
+                            const strippedJoined = stripSpace(joinedText).toLowerCase();
+                            const strippedKeyword = stripSpace(keyword).toLowerCase();
+
+                            const matchRanges = [];
+                            if (strippedKeyword) {
+                                let searchStart = 0; let guard = 0;
+                                while (guard < 200) {
+                                    guard++;
+                                    const idx = strippedJoined.indexOf(strippedKeyword, searchStart);
+                                    if (idx === -1) break;
+                                    const startOrig = map[idx];
+                                    const endOrig = map[idx + strippedKeyword.length - 1] + 1;
+                                    if (startOrig === undefined || endOrig === undefined) break;
+                                    matchRanges.push({ start: startOrig, end: endOrig });
+                                    searchStart = idx + strippedKeyword.length;
+                                }
+                            }
+
+                            if (matchRanges.length > 0) {
+                                ctx.save();
+                                ctx.globalCompositeOperation = 'multiply';
+                                ctx.fillStyle = '#fde68a';
+
+                                itemRanges.forEach(({ start, end, idx }) => {
+                                    const overlaps = matchRanges.some(m => start < m.end && end > m.start);
+                                    if (!overlaps) return;
+                                    const item = items[idx];
                                     const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
                                     const fontHeight = Math.hypot(tx[2], tx[3]) || 10;
                                     const scaleX = Math.hypot(tx[0], tx[1]) || 1;
@@ -557,9 +596,10 @@
                                     const x = tx[4];
                                     const y = tx[5] - fontHeight;
                                     ctx.fillRect(x - 2, y - 2, width + 4, fontHeight + 4);
-                                }
-                            });
-                            ctx.restore();
+                                });
+
+                                ctx.restore();
+                            }
                         } catch (highlightErr) {
                             console.error('하이라이트 표시 실패', highlightErr);
                         }
